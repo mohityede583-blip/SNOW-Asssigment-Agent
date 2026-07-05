@@ -1,0 +1,63 @@
+Create a RAG based web app with below features:
+1. It should show list of unassigned service now incidents ticket
+2. we have 1 button named 'assign' which will assign checked unassigned incidents to available associates by there skillsets and experience.
+3. to get latest incidents we will pull newly created incidents from servicenow API.
+4. We will use LLM to get available associeates on shift.
+5. We will store embeddings of already solved incidents into vector DB.
+
+
+Factors needs to consider while assigning incident:
+1. Associate should be available at the time of assignment.
+2. Number of incidents already in associate bucket
+3. past experience on same kind of incident
+4. We have categories our associetes into teams by there technologies.
+5. we have monthly roster for associate shift time.
+6. If incident does not lie in any of the available technology as per roster than assign it to L1 Team member
+
+Details will be available in shift roster.
+1. name of associate
+2. team technology e.g. MFT,ESB,Azure,DB,ETL,etc
+3. Shift definition to define acronym
+4. We will have shift acronym for each day of month.
+
+
+Tech stack:
+frontend: React,NodeJS,Javascript,tailwindcss,etc
+backend: python, fastapi, langchain/langgraph, Ollama open source models,etc
+
+-----------------------------------------------------------------------------------------------------------------
+
+Role: You are an expert Full-Stack Developer and AI Architect.
+Objective: Build a RAG-based web application to automate ServiceNow incident assignment.
+Tech stack: Javascript, React, python, fastapi, langchain/langgraph, Ollama open source LLMs,etc
+
+1. Dashboard for Unassigned Incidents: A web interface that displays a real-time list of all unassigned ServiceNow incidents.
+2. Intelligent Assignment Engine: An "Assign" button that triggers an automated workflow to assign selected incidents to appropriate associates based on their skill sets, current availability, and experience levels.
+3. ServiceNow Integration: A background service to periodically fetch newly created incidents from the ServiceNow API and update the dashboard.
+4. AI-Powered Staffing: Integration with an LLM to identify which associates are currently on shift and qualified to handle the incident.
+5. Historical Knowledge Base (RAG): A vector database that stores embeddings of resolved incidents, allowing the system to reference historical solutions for better assignment accuracy.
+6. Feedback/Confidence Loop: The LLM should provide a "Confidence Score" for each assignment recommendation. If the score is below a certain threshold (e.g., 70%), the system should flag it for human review.
+7. Audit Logging: A feature to track why the AI chose a specific associate for an incident. This provides transparency and helps in auditing the automated decision-making process.
+8. Performance Metrics: A dashboard view showing metrics like "Time to Assignment" and "Assignment Accuracy" to measure the effectiveness of the AI.
+9.Escalation Path: If an associate rejects an assignment, the system should automatically re-run the logic.
+
+Here is the refined list of business logic requirements, formatted for clarity and technical implementation:
+1. Real-Time Availability: The system must verify that the associate is actively on shift at the exact time of assignment.
+2. Workload Balancing: The assignment logic must consider the current incident volume in an associate’s queue to prevent overloading individuals.
+3. Relevant Domain Experience: The engine should prioritize associates based on their historical performance and success rate with similar types of incidents.
+4. Technology-Based Team Mapping: Associates must be grouped into specific teams based on their technical domain (e.g., Cloud, Network, Database).
+5. Shift-Aware Roster: The system must integrate with the monthly shift roster to determine which associates are on duty.
+6. Default Escalation Path: If an incident falls outside the predefined technology domains, it must be automatically routed to the L1 Support Team.
+7. Priority/SLA Urgency: Incorporate the incident's SLA (Service Level Agreement) status. If a ticket is approaching a breach, prioritize assignment to more senior or highly experienced associates.
+8. Skill Proficiency Level: Define a "Skill Level" (e.g., L1, L2, L3) for each technology. A senior incident should be matched with a higher proficiency-rated associate.
+
+Shift Roster Data Requirements(file format is Excel, 1 sheet for each tech team):
+1.Associate Name: The full name of the associate.
+2.Technology Domain: The specific technical team the associate belongs to (e.g., MFT, ESB, Azure, Database, ETL).
+3. Shift Definitions: A master reference key mapping acronyms to specific time blocks (e.g., "AM," "EVE," "N").
+4. Daily Shift Schedule: A monthly calendar mapping each date to a specific shift acronym for every associate.
+
+
+
+
+

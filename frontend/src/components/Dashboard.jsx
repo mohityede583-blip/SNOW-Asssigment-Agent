@@ -1,0 +1,608 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Play, RefreshCw, CheckCircle, XCircle, AlertTriangle, 
+  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award
+} from 'lucide-react';
+import { 
+  getIncidents, simulateIncident, assignIncidents, 
+  approveAssignment, rejectAssignment, overrideAssignment, 
+  resolveIncident, getAssociates, getLogs
+} from '../api';
+
+export default function Dashboard({ onUpdateMetrics }) {
+  const [incidents, setIncidents] = useState([]);
+  const [associates, setAssociates] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState('');
+  const [activeRecommendation, setActiveRecommendation] = useState(null);
+  const [showOverrideModal, setShowOverrideModal] = useState(null); // ticket num
+  const [resolveForm, setShowResolveModal] = useState(null); // ticket num
+
+  // Form states
+  const [resolutionText, setResolutionText] = useState('');
+  const [selectedAssignee, setSelectedAssignee] = useState('');
+
+  const loadData = async () => {
+    try {
+      const incData = await getIncidents();
+      const assocData = await getAssociates();
+      setIncidents(incData);
+      setAssociates(assocData);
+      if (onUpdateMetrics) onUpdateMetrics();
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    // Poll for new incidents every 15 seconds
+    const interval = setInterval(loadData, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const unassigned = incidents.filter(i => i.status === 'Unassigned').map(i => i.number);
+      setSelectedIds(unassigned);
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (number) => {
+    if (selectedIds.includes(number)) {
+      setSelectedIds(selectedIds.filter(id => id !== number));
+    } else {
+      setSelectedIds([...selectedIds, number]);
+    }
+  };
+
+  const handleSimulate = async () => {
+    setIsLoading(true);
+    setLoadingText("ServiceNow API is pushing a new unassigned ticket...");
+    try {
+      await simulateIncident();
+      await loadData();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAutoAssign = async () => {
+    if (selectedIds.length === 0) return;
+    setIsLoading(true);
+    setLoadingText(`AI Agent is analyzing ${selectedIds.length} ticket(s)...\n- Running skill mapping\n- Checking active shift rosters\n- Inspecting RAG knowledge base`);
+    
+    try {
+      const results = await assignIncidents(selectedIds);
+      await loadData();
+      setSelectedIds([]);
+      
+      // If we assigned a single ticket, show its recommendation audit log details
+      if (results.length === 1 && results[0].status === 'success') {
+        setActiveRecommendation(results[0]);
+      } else {
+        alert(`Successfully processed ${results.length} ticket(s) with AI! Check flagged tickets in dashboard.`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error in AI assignment. Ensure Ollama service is running.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApprove = async (number, assignee) => {
+    try {
+      await approveAssignment(number, assignee);
+      setActiveRecommendation(null);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleReject = async (number, assignee) => {
+    setIsLoading(true);
+    setLoadingText(`Associate rejected assignment. Escalating and re-running AI matching flow for ${number}...`);
+    try {
+      const res = await rejectAssignment(number, assignee);
+      await loadData();
+      if (res.reassignment && res.reassignment.status === 'success') {
+        setActiveRecommendation(res.reassignment);
+      } else {
+        setActiveRecommendation(null);
+        alert("Escalated to fallback. No other matching associates available on shift.");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOverride = async (number) => {
+    if (!selectedAssignee) return;
+    try {
+      await overrideAssignment(number, selectedAssignee);
+      setShowOverrideModal(null);
+      setSelectedAssignee('');
+      setActiveRecommendation(null);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResolve = async (number, resolvedBy) => {
+    if (!resolutionText) return;
+    try {
+      await resolveIncident(number, resolutionText, resolvedBy);
+      setShowResolveModal(null);
+      setResolutionText('');
+      await loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getPriorityBadge = (prio) => {
+    switch (prio) {
+      case '1': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-950 text-red-400 border border-red-800 glow-border-red">1 - Critical</span>;
+      case '2': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-orange-950 text-orange-400 border border-orange-800">2 - High</span>;
+      case '3': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-950 text-blue-400 border border-blue-800">3 - Moderate</span>;
+      default: return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 text-slate-400 border border-slate-700">4 - Low</span>;
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'Unassigned': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-slate-900 text-slate-400 border border-slate-700">Unassigned</span>;
+      case 'Flagged': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1 w-max"><AlertTriangle size={12}/> Human Review</span>;
+      case 'Assigned': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-950 text-blue-400 border border-blue-800 flex items-center gap-1 w-max"><UserCheck size={12}/> Assigned</span>;
+      case 'Resolved': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1 w-max"><CheckCircle size={12}/> Resolved</span>;
+      default: return null;
+    }
+  };
+
+  const getConfidenceBadge = (score) => {
+    if (score >= 80) return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1"><ShieldCheck size={16}/> {score}%</span>;
+    if (score >= 70) return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1"><AlertTriangle size={16}/> {score}%</span>;
+    return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-red-950 text-red-400 border border-red-800 flex items-center gap-1"><ShieldAlert size={16}/> {score}% (Flagged)</span>;
+  };
+
+  const unassignedIncidents = incidents.filter(i => i.status === 'Unassigned');
+  const flaggedIncidents = incidents.filter(i => i.status === 'Flagged');
+  const assignedIncidents = incidents.filter(i => i.status === 'Assigned');
+  const resolvedIncidents = incidents.filter(i => i.status === 'Resolved');
+
+  return (
+    <div className="space-y-6">
+      {/* Header Cards Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="glass-card p-4 rounded-xl flex items-center justify-between">
+          <div>
+            <p className="text-slate-400 text-sm">Unassigned Incidents</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-slate-100">{unassignedIncidents.length}</h3>
+          </div>
+          <div className="p-3 rounded-lg bg-slate-900 border border-slate-700">
+            <RefreshCw size={24} className="text-slate-400" />
+          </div>
+        </div>
+        <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-amber-500 border-l-2">
+          <div>
+            <p className="text-slate-400 text-sm">Pending Human Review</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-amber-400">{flaggedIncidents.length}</h3>
+          </div>
+          <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-900">
+            <AlertTriangle size={24} className="text-amber-400" />
+          </div>
+        </div>
+        <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-blue-500 border-l-2">
+          <div>
+            <p className="text-slate-400 text-sm">Active Assignments</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-blue-400">{assignedIncidents.length}</h3>
+          </div>
+          <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-900">
+            <UserCheck size={24} className="text-blue-400" />
+          </div>
+        </div>
+        <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-emerald-500 border-l-2">
+          <div>
+            <p className="text-slate-400 text-sm">Resolved Tickets</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-emerald-400">{resolvedIncidents.length}</h3>
+          </div>
+          <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-900">
+            <CheckCircle size={24} className="text-emerald-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons bar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 glass-card rounded-xl">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSimulate}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
+          >
+            <Play size={16} className="text-glowGreen" />
+            Simulate ServiceNow Incident
+          </button>
+          <button
+            onClick={loadData}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 transition"
+          >
+            <RefreshCw size={16} />
+            Fetch/Sync SNOW API
+          </button>
+        </div>
+        <button
+          onClick={handleAutoAssign}
+          disabled={selectedIds.length === 0}
+          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition glow-border-blue ${
+            selectedIds.length > 0 
+              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
+              : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+          }`}
+        >
+          <Cpu size={18} />
+          Intelligent Auto-Assign ({selectedIds.length})
+        </button>
+      </div>
+
+      {/* Main dashboard lists */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Incident Lists Table */}
+        <div className="glass-card rounded-xl p-6 lg:col-span-8 space-y-6">
+          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+            ServiceNow Ticket Queue
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                  <th className="py-3 px-4">
+                    <input 
+                      type="checkbox"
+                      onChange={handleSelectAll}
+                      checked={unassignedIncidents.length > 0 && selectedIds.length === unassignedIncidents.length}
+                      className="rounded bg-slate-900 border-slate-750 text-blue-500 focus:ring-blue-500"
+                    />
+                  </th>
+                  <th className="py-3 px-4">Ticket</th>
+                  <th className="py-3 px-4">Details</th>
+                  <th className="py-3 px-4">Priority / Domain</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Assignee</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-850 text-sm">
+                {incidents.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="py-8 text-center text-slate-500">
+                      No incidents in queue. Click "Simulate ServiceNow Incident" to generate tickets.
+                    </td>
+                  </tr>
+                ) : (
+                  incidents.map((inc) => (
+                    <tr key={inc.number} className="hover:bg-slate-900/40 transition">
+                      <td className="py-4 px-4">
+                        {inc.status === 'Unassigned' && (
+                          <input 
+                            type="checkbox"
+                            checked={selectedIds.includes(inc.number)}
+                            onChange={() => handleSelectOne(inc.number)}
+                            className="rounded bg-slate-900 border-slate-750 text-blue-500 focus:ring-blue-500"
+                          />
+                        )}
+                      </td>
+                      <td className="py-4 px-4 font-mono text-slate-300 font-semibold">{inc.number}</td>
+                      <td className="py-4 px-4 max-w-xs">
+                        <p className="font-semibold text-slate-200 truncate">{inc.short_description}</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>
+                      </td>
+                      <td className="py-4 px-4 space-y-1">
+                        <div>{getPriorityBadge(inc.priority)}</div>
+                        <div className="text-xs text-slate-400">Team: <span className="font-semibold text-slate-300">{inc.category}</span></div>
+                      </td>
+                      <td className="py-4 px-4">{getStatusBadge(inc.status)}</td>
+                      <td className="py-4 px-4 font-medium text-slate-300">
+                        {inc.assigned_to ? (
+                          <span className="text-blue-400">{inc.assigned_to}</span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                        {inc.rejection_count > 0 && (
+                          <div className="text-[10px] text-red-400 font-semibold">Rejected x{inc.rejection_count}</div>
+                        )}
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          {inc.status === 'Flagged' && (
+                            <button
+                              onClick={async () => {
+                                // Find recommendation log to show details
+                                try {
+                                  const logs = await getLogs(inc.number);
+                                  if (logs.length > 0) {
+                                    // Fetch matching candidates list
+                                    const cands = logs[0].evaluated_associates || [];
+                                    setActiveRecommendation({
+                                      incident_number: inc.number,
+                                      recommended_associate: logs[0].recommended_associate,
+                                      confidence_score: logs[0].confidence_score,
+                                      justification: logs[0].justification,
+                                      candidates: cands
+                                    });
+                                  }
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-2 py-1 text-xs font-bold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition border border-amber-800"
+                            >
+                              Review
+                            </button>
+                          )}
+                          {inc.status === 'Assigned' && (
+                            <button
+                              onClick={() => {
+                                setShowResolveModal(inc.number);
+                                setResolutionText('');
+                              }}
+                              className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition border border-emerald-800"
+                            >
+                              Resolve
+                            </button>
+                          )}
+                          {inc.status !== 'Resolved' && (
+                            <button
+                              onClick={() => {
+                                setShowOverrideModal(inc.number);
+                                setSelectedAssignee('');
+                              }}
+                              className="px-2 py-1 text-xs font-semibold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition border border-slate-700"
+                            >
+                              Manual
+                            </button>
+                          )}
+                          {inc.status === 'Resolved' && (
+                            <span className="text-xs text-slate-500 italic">Resolved</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* AI Recommendations Panel */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="glass-card rounded-xl p-6 space-y-6 border border-slate-850">
+            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+              <Cpu className="text-blue-500" />
+              AI Recommendation Audit
+            </h2>
+
+            {activeRecommendation ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-blue-400 font-bold">{activeRecommendation.incident_number}</span>
+                    {getConfidenceBadge(activeRecommendation.confidence_score)}
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Recommended Agent</p>
+                    <p className="text-lg font-bold text-slate-100 mt-0.5">{activeRecommendation.recommended_associate}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Justification Log</p>
+                    <p className="text-sm text-slate-300 mt-1 leading-relaxed italic bg-slate-950 p-2.5 rounded-lg border border-slate-850">
+                      "{activeRecommendation.justification}"
+                    </p>
+                  </div>
+                </div>
+
+                {/* Candidate Scoring Breakdown */}
+                {activeRecommendation.candidates && activeRecommendation.candidates.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Candidate Matches Evaluated</p>
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                      {activeRecommendation.candidates.map((cand) => (
+                        <div key={cand.name} className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-850 text-xs flex justify-between items-start gap-2">
+                          <div className="space-y-1">
+                            <p className="font-bold text-slate-200">{cand.name}</p>
+                            <p className="text-slate-400">Active Queue: <span className="font-semibold text-slate-300">{cand.active_tickets}</span> | Level: {cand.skill_level}</p>
+                            <div className="text-[10px] text-slate-500 leading-tight">
+                              {cand.score_breakdown && cand.score_breakdown.map((r, i) => (
+                                <div key={i}>• {r}</div>
+                              ))}
+                            </div>
+                          </div>
+                          <span className={`px-2 py-0.5 font-bold rounded ${
+                            cand.name === activeRecommendation.recommended_associate 
+                              ? 'bg-blue-950 text-blue-400 border border-blue-800' 
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}>
+                            Score: {cand.heuristic_score}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recommendation Actions */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    onClick={() => handleApprove(activeRecommendation.incident_number, activeRecommendation.recommended_associate)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition glow-border-green"
+                  >
+                    <Check size={16} /> Approve
+                  </button>
+                  <button
+                    onClick={() => handleReject(activeRecommendation.incident_number, activeRecommendation.recommended_associate)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 transition"
+                  >
+                    <X size={16} /> Reject (Escalate)
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowOverrideModal(activeRecommendation.incident_number);
+                    setSelectedAssignee('');
+                  }}
+                  className="w-full py-2 text-sm font-bold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition border border-slate-700 text-center"
+                >
+                  Manual Override Assignment
+                </button>
+              </div>
+            ) : (
+              <div className="py-12 text-center text-slate-500 flex flex-col items-center justify-center space-y-3">
+                <Cpu size={36} className="text-slate-700" />
+                <p className="text-sm">Select an unassigned ticket and click "Auto-Assign" or click "Review" on a flagged ticket to view AI reasoning logs.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Manual Override Modal */}
+      {showOverrideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-xl border border-slate-800 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-slate-100">Manual Assignment Override</h3>
+              <button onClick={() => setShowOverrideModal(null)} className="text-slate-400 hover:text-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-slate-400">
+                Directly route ticket <span className="font-mono text-blue-400 font-bold">{showOverrideModal}</span> to any team member.
+              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Select Associate</label>
+                <select
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-850 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">-- Choose Associate --</option>
+                  {associates.map((assoc) => (
+                    <option key={assoc.name} value={assoc.name}>
+                      {assoc.name} ({assoc.domain} - {assoc.skill_level}) {assoc.is_on_shift ? '• ON SHIFT' : '(OFF)'} - Queue: {assoc.active_tickets}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowOverrideModal(null)}
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleOverride(showOverrideModal)}
+                disabled={!selectedAssignee}
+                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
+                  selectedAssignee 
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer glow-border-blue' 
+                    : 'bg-slate-850 text-slate-500 border border-slate-800 cursor-not-allowed'
+                }`}
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resolve Incident Modal */}
+      {resolveForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-lg p-6 rounded-xl border border-slate-800 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <Database className="text-emerald-500" />
+                Resolve Incident & Save to RAG KB
+              </h3>
+              <button onClick={() => setShowResolveModal(null)} className="text-slate-400 hover:text-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-slate-400">
+                Provide resolution comments for ticket <span className="font-mono text-blue-400 font-bold">{resolveForm}</span>. Resolving will automatically vectorize and index this incident in the historical knowledge base for future assignments.
+              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Resolution Notes</label>
+                <textarea
+                  rows="4"
+                  value={resolutionText}
+                  onChange={(e) => setResolutionText(e.target.value)}
+                  placeholder="Explain how this incident was fixed. Be descriptive (mention systems, errors, codes, portal paths) to allow accurate future RAG lookups."
+                  className="w-full bg-slate-900 border border-slate-850 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none placeholder-slate-600"
+                ></textarea>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowResolveModal(null)}
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const incObj = incidents.find(i => i.number === resolveForm);
+                  handleResolve(resolveForm, incObj?.assigned_to);
+                }}
+                disabled={!resolutionText}
+                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
+                  resolutionText 
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer glow-border-green' 
+                    : 'bg-slate-850 text-slate-500 border border-slate-800 cursor-not-allowed'
+                }`}
+              >
+                Submit & Vectorize
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md">
+          <div className="relative flex items-center justify-center">
+            {/* Pulsing ring */}
+            <div className="absolute w-24 h-24 rounded-full border border-blue-500 animate-ping opacity-25"></div>
+            {/* Spinning ring */}
+            <div className="w-20 h-20 rounded-full border-t-2 border-r-2 border-blue-500 animate-spin"></div>
+            {/* Center icon */}
+            <div className="absolute text-blue-500">
+              <Cpu size={32} className="animate-pulse" />
+            </div>
+          </div>
+          <p className="mt-8 text-lg font-bold text-slate-100 glow-text-blue text-center">AI System In Progress</p>
+          <pre className="mt-4 text-xs text-slate-400 max-w-md text-center leading-relaxed font-mono whitespace-pre-line bg-slate-900 p-4 rounded-xl border border-slate-800">
+            {loadingText}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
