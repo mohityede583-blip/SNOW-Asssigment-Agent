@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_TEXT_MODEL: str = "qwen3:1.7b"  # Fast local model
     OLLAMA_EMBED_MODEL: str = "qwen3-embedding:4b"  # Native embedding model
+
+    # ChromaDB Settings
+    CHROMA_PERSIST_DIR: str = "./chroma_db"
+    CHROMA_COLLECTION_NAME: str = "resolved_incidents"
     
     # ServiceNow Settings
     SERVICENOW_URL: str = os.getenv("SERVICENOW_URL", "")

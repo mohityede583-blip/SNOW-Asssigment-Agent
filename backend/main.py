@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from backend.config import settings
-from backend.database import get_db_connection, init_db
+from backend.database import get_db_connection, init_db, get_seed_resolved_incidents
 from backend.servicenow_client import servicenow_client
 from backend.assignment_engine import assignment_engine
 from backend.rag_engine import rag_engine
@@ -27,8 +27,10 @@ app.add_middleware(
 # Startup event
 @app.on_event("startup")
 async def startup_event():
-    # Initialize the database and sync/seed
+    # Initialize the database (associates + incidents + audit logs)
     init_db()
+    # Bootstrap the RAG knowledge base in ChromaDB with the historical seed list
+    rag_engine.seed_historical_incidents(get_seed_resolved_incidents())
     # Start the periodic background fetch task
     asyncio.create_task(periodic_snow_pull())
 
@@ -404,12 +406,10 @@ def get_assignment_logs(incident_number: Optional[str] = None):
 
 @app.get("/api/history")
 def get_history():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, number, short_description, resolution, resolved_by FROM resolved_incidents")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    try:
+        return rag_engine.get_all_resolved_incidents()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history/search")
 def search_history(query: str):

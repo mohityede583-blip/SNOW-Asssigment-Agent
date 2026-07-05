@@ -1,129 +1,234 @@
-import sqlite3
-import numpy as np
-import httpx
+import chromadb
+from chromadb.config import Settings as ChromaSettings
+from langchain_chroma import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_core.documents import Document
+
 from backend.config import settings
-from backend.database import get_db_connection
+
 
 class RAGEngine:
+    """
+    RAG engine backed by ChromaDB and orchestrated by LangChain.
+
+    Public API (unchanged from the SQLite-based version):
+        - add_resolved_incident(number, short_description, resolution, resolved_by)
+        - search_similar_incidents(query, top_k=2) -> list of dicts
+        - get_all_resolved_incidents() -> list of dicts (used by /api/history)
+        - seed_historical_incidents(seed_list) -> bulk-loads historical KB
+
+    Storage: ChromaDB collection at settings.CHROMA_PERSIST_DIR / settings.CHROMA_COLLECTION_NAME.
+    Embeddings: settings.OLLAMA_EMBED_MODEL via langchain_community.embeddings.OllamaEmbeddings.
+    """
+
     def __init__(self):
-        self.ollama_url = f"{settings.OLLAMA_BASE_URL}/api/embeddings"
-        self.model_name = settings.OLLAMA_EMBED_MODEL
+        # 1. LangChain embedding function wrapping the local Ollama model
+        self.embeddings = OllamaEmbeddings(
+            model=settings.OLLAMA_EMBED_MODEL,
+            base_url=settings.OLLAMA_BASE_URL,
+        )
 
-    def get_embedding(self, text: str) -> list:
-        payload = {
-            "model": self.model_name,
-            "prompt": text
+        # 2. Persistent ChromaDB client on disk
+        self.chroma_client = chromadb.PersistentClient(
+            path=settings.CHROMA_PERSIST_DIR,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+
+        # 3. LangChain Chroma vector store bound to the named collection
+        self.vectorstore = Chroma(
+            client=self.chroma_client,
+            collection_name=settings.CHROMA_COLLECTION_NAME,
+            embedding_function=self.embeddings,
+        )
+
+    # ---------- write paths ----------
+
+    def add_resolved_incident(
+        self,
+        number: str,
+        short_description: str,
+        resolution: str,
+        resolved_by: str,
+    ) -> None:
+        """
+        Indexes a freshly resolved incident into ChromaDB so future similar
+        incidents can match against it.
+        """
+        text = f"{short_description} {resolution}"
+        metadata = {
+            "number": number,
+            "short_description": short_description,
+            "resolution": resolution,
+            "resolved_by": resolved_by,
         }
+        # Use the incident number as the doc id so re-resolving the same
+        # ticket doesn't create duplicate embeddings.
+        doc = Document(page_content=text, metadata=metadata, id=number)
+        self.vectorstore.add_documents([doc])
+        print(f"Added resolved incident {number} to RAG (ChromaDB).")
+
+    def seed_historical_incidents(self, historical_tickets: list) -> None:
+        """
+        Bulk-loads the historical seed list into ChromaDB on first startup.
+        Skips if the collection already has documents (idempotent across restarts).
+        """
+        existing = self.chroma_client.get_or_create_collection(
+            name=settings.CHROMA_COLLECTION_NAME
+        )
+        if existing.count() > 0:
+            print(
+                f"ChromaDB collection already has {existing.count()} docs; "
+                "skipping seed."
+            )
+            return
+
+        print(
+            f"Seeding {len(historical_tickets)} historical resolved incidents "
+            "into ChromaDB..."
+        )
+        documents = []
+        for ticket in historical_tickets:
+            text = f"{ticket['short_description']} {ticket['resolution']}"
+            metadata = {
+                "number": ticket["number"],
+                "short_description": ticket["short_description"],
+                "resolution": ticket["resolution"],
+                "resolved_by": ticket["resolved_by"],
+            }
+            documents.append(
+                Document(page_content=text, metadata=metadata, id=ticket["number"])
+            )
+        self.vectorstore.add_documents(documents)
+        print("Historical incidents seeded into ChromaDB successfully.")
+
+    # ---------- read paths ----------
+
+    def search_similar_incidents(
+        self, incident_description: str, top_k: int = 2
+    ) -> list:
+        """
+        Returns the top_k most similar resolved incidents for the given query.
+        Each result is a dict with the same shape the assignment engine expects:
+            { number, short_description, resolution, resolved_by, similarity_score }
+        """
         try:
-            with httpx.Client(timeout=15.0) as client:
-                resp = client.post(self.ollama_url, json=payload)
-                if resp.status_code == 200:
-                    return resp.json()["embedding"]
-                else:
-                    print(f"Ollama RAG embedding error: Status {resp.status_code}, {resp.text}")
+            # langchain_chroma's Chroma uses L2 (squared) distance by default.
+            # `similarity_search_with_score` returns (Document, distance) pairs
+            # where LOWER distance = MORE similar. We convert to a 0..100
+            # similarity score with: 100 / (1 + distance).
+            hits = self.vectorstore.similarity_search_with_score(
+                incident_description, k=top_k
+            )
+
+            results = []
+            for doc, distance in hits:
+                d = max(0.0, float(distance))
+                # Monotonic mapping: distance 0 -> 100, distance 1 -> 50, etc.
+                sim_pct = 100.0 / (1.0 + d)
+                results.append({
+                    "number": doc.metadata.get("number", ""),
+                    "short_description": doc.metadata.get("short_description", ""),
+                    "resolution": doc.metadata.get("resolution", ""),
+                    "resolved_by": doc.metadata.get("resolved_by", ""),
+                    "similarity_score": round(sim_pct, 2),
+                })
+            return results
         except Exception as e:
-            print(f"Error calling Ollama embedding API: {e}")
-            
-        # Zero-vector fallback of typical dimension size 1024
-        return [0.0] * 1024
-
-    def add_resolved_incident(self, number: str, short_description: str, resolution: str, resolved_by: str):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        text_to_embed = f"{short_description} {resolution}"
-        embedding = self.get_embedding(text_to_embed)
-        emb_blob = np.array(embedding, dtype=np.float32).tobytes()
-        
-        cursor.execute("""
-        INSERT INTO resolved_incidents (number, short_description, resolution, resolved_by, embedding)
-        VALUES (?, ?, ?, ?, ?)
-        """, (number, short_description, resolution, resolved_by, emb_blob))
-        
-        conn.commit()
-        conn.close()
-        print(f"Added resolved incident {number} to RAG Database.")
-
-    def search_similar_incidents(self, incident_description: str, top_k: int = 2) -> list:
-        """
-        Searches the SQLite RAG store for similar resolved incidents using cosine similarity.
-        """
-        query_vector = np.array(self.get_embedding(incident_description), dtype=np.float32)
-        query_norm = np.linalg.norm(query_vector)
-        
-        if query_norm == 0:
-            # If embedding service is down, we cannot do vector search. 
-            # Fallback to simple SQL keyword search! (This is an extremely robust design)
+            print(f"Error during vector search: {e}")
             return self.keyword_search_fallback(incident_description, top_k)
-            
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id, number, short_description, resolution, resolved_by, embedding FROM resolved_incidents")
-        rows = cursor.fetchall()
-        conn.close()
-        
-        results = []
-        for row in rows:
-            emb_blob = row["embedding"]
-            if not emb_blob:
-                continue
-                
-            db_vector = np.frombuffer(emb_blob, dtype=np.float32)
-            db_norm = np.linalg.norm(db_vector)
-            
-            if db_norm == 0:
-                similarity = 0.0
-            else:
-                # Cosine similarity
-                similarity = float(np.dot(query_vector, db_vector) / (query_norm * db_norm))
-                
-            results.append({
-                "number": row["number"],
-                "short_description": row["short_description"],
-                "resolution": row["resolution"],
-                "resolved_by": row["resolved_by"],
-                "similarity_score": round(similarity * 100, 2)
-            })
-            
-        # Sort by similarity descending
-        results.sort(key=lambda x: x["similarity_score"], reverse=True)
-        return results[:top_k]
+
+    def get_all_resolved_incidents(self) -> list:
+        """
+        Returns every indexed resolved incident (used by /api/history).
+        Pulls all metadata back from ChromaDB in one call.
+        """
+        data = self.vectorstore.get()  # {ids, metadatas, documents, embeddings}
+        ids = data.get("ids", []) or []
+        metadatas = data.get("metadatas", []) or []
+        out = []
+        for doc_id, meta in zip(ids, metadatas):
+            entry = {"id": doc_id, **(meta or {})}
+            out.append(entry)
+        return out
 
     def keyword_search_fallback(self, query: str, top_k: int) -> list:
         """
-        Keyword-based SQL search fallback if the embedding model is unavailable.
+        Metadata-only keyword search against ChromaDB. Used when the
+        embedding service is unavailable so the RAG pipeline still returns
+        something useful instead of nothing.
         """
         print("Embedding service unavailable. Falling back to keyword search...")
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Tokenize query to find matching keywords
-        words = [w.strip() for w in query.lower().split() if len(w) > 3]
-        if not words:
-            cursor.execute("SELECT number, short_description, resolution, resolved_by FROM resolved_incidents LIMIT ?", (top_k,))
-            rows = cursor.fetchall()
-        else:
-            # Construct a SQL query that searches for keywords in short_description
-            like_clauses = " OR ".join(["short_description LIKE ?" for _ in words])
-            params = [f"%{w}%" for w in words]
-            sql = f"SELECT number, short_description, resolution, resolved_by FROM resolved_incidents WHERE {like_clauses} LIMIT ?"
-            cursor.execute(sql, params + [top_k])
-            rows = cursor.fetchall()
-            
-            # If no matches, return any resolved incidents
-            if not rows:
-                cursor.execute("SELECT number, short_description, resolution, resolved_by FROM resolved_incidents LIMIT ?", (top_k,))
-                rows = cursor.fetchall()
-                
-        conn.close()
-        
-        return [{
-            "number": r["number"],
-            "short_description": r["short_description"],
-            "resolution": r["resolution"],
-            "resolved_by": r["resolved_by"],
-            "similarity_score": 50.0  # Default fallback score
-        } for r in rows]
+        tokens = [w.strip().lower() for w in query.split() if len(w) > 3]
+        collection = self.chroma_client.get_or_create_collection(
+            name=settings.CHROMA_COLLECTION_NAME
+        )
+
+        rows = []
+        seen_ids = set()
+
+        if tokens:
+            for token in tokens:
+                try:
+                    res = collection.get(
+                        where={
+                            "$or": [
+                                {"short_description": {"$contains": token}},
+                                {"resolution": {"$contains": token}},
+                            ]
+                        }
+                    )
+                except Exception:
+                    # ChromaDB <0.5 uses different operator names; fall back
+                    # to an unfiltered pull and filter client-side.
+                    res = collection.get()
+                    res_ids = res.get("ids", []) or []
+                    res_metas = res.get("metadatas", []) or []
+                    res = {
+                        "ids": [
+                            i for i, m in zip(res_ids, res_metas)
+                            if token in (m or {}).get("short_description", "").lower()
+                            or token in (m or {}).get("resolution", "").lower()
+                        ],
+                        "metadatas": [
+                            m for m in res_metas
+                            if token in (m or {}).get("short_description", "").lower()
+                            or token in (m or {}).get("resolution", "").lower()
+                        ],
+                    }
+
+                for doc_id, meta in zip(
+                    res.get("ids", []) or [], res.get("metadatas", []) or []
+                ):
+                    if doc_id in seen_ids:
+                        continue
+                    seen_ids.add(doc_id)
+                    rows.append({
+                        "number": (meta or {}).get("number", ""),
+                        "short_description": (meta or {}).get("short_description", ""),
+                        "resolution": (meta or {}).get("resolution", ""),
+                        "resolved_by": (meta or {}).get("resolved_by", ""),
+                        "similarity_score": 50.0,
+                    })
+                    if len(rows) >= top_k:
+                        return rows
+
+        # Final fallback: just return the first top_k rows
+        if not rows:
+            res = collection.get()
+            for doc_id, meta in zip(
+                res.get("ids", []) or [], res.get("metadatas", []) or []
+            ):
+                rows.append({
+                    "number": (meta or {}).get("number", ""),
+                    "short_description": (meta or {}).get("short_description", ""),
+                    "resolution": (meta or {}).get("resolution", ""),
+                    "resolved_by": (meta or {}).get("resolved_by", ""),
+                    "similarity_score": 50.0,
+                })
+                if len(rows) >= top_k:
+                    break
+
+        return rows[:top_k]
+
 
 rag_engine = RAGEngine()

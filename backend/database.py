@@ -1,13 +1,8 @@
 import sqlite3
-import json
-import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-import httpx
 from backend.config import settings
 
 DB_FILE = "./incident_assignment.db"
-
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -46,18 +41,8 @@ def init_db():
     )
     """)
     
-    # 3. Create Resolved Incidents Table (RAG Store)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS resolved_incidents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        number TEXT,
-        short_description TEXT,
-        resolution TEXT,
-        resolved_by TEXT,
-        embedding BLOB
-    )
-    """)
-    
+    # 3. Resolved Incidents are now stored in ChromaDB (see backend/rag_engine.py)
+
     # 4. Create Assignment Logs Table (Audit)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS assignment_logs (
@@ -78,9 +63,9 @@ def init_db():
     
     # Sync associates from Excel sheet
     sync_associates_from_roster()
-    
-    # Seed historical resolved incidents for RAG
-    seed_resolved_incidents()
+
+    # Historical resolved incidents are now seeded into ChromaDB by rag_engine
+    # at startup (see backend/main.py startup_event).
 
 def sync_associates_from_roster():
     print("Syncing associates from shift roster Excel...")
@@ -112,20 +97,13 @@ def sync_associates_from_roster():
     except Exception as e:
         print(f"Error syncing associates from roster: {e}")
 
-def seed_resolved_incidents():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if we already have resolved incidents
-    cursor.execute("SELECT COUNT(*) FROM resolved_incidents")
-    count = cursor.fetchone()[0]
-    if count > 0:
-        conn.close()
-        return
-        
-    print("Seeding resolved incidents for RAG...")
-    
-    historical_tickets = [
+def get_seed_resolved_incidents() -> list:
+    """
+    Returns the historical resolved incidents used to bootstrap the RAG knowledge base.
+    The list is consumed by rag_engine.seed_historical_incidents() at startup
+    and written into ChromaDB.
+    """
+    return [
         {
             "number": "INC0001001",
             "short_description": "Azure VM disk space critically low",
@@ -187,43 +165,3 @@ def seed_resolved_incidents():
             "resolved_by": "Noah Walker"  # ETL L2
         }
     ]
-    
-    # We will generate embeddings for each and save to database
-    for ticket in historical_tickets:
-        text_to_embed = f"{ticket['short_description']} {ticket['resolution']}"
-        embedding = get_ollama_embedding(text_to_embed)
-        
-        # Serialize embedding float list to binary
-        emb_blob = np.array(embedding, dtype=np.float32).tobytes()
-        
-        cursor.execute("""
-        INSERT INTO resolved_incidents (number, short_description, resolution, resolved_by, embedding)
-        VALUES (?, ?, ?, ?, ?)
-        """, (ticket["number"], ticket["short_description"], ticket["resolution"], ticket["resolved_by"], emb_blob))
-        
-    conn.commit()
-    conn.close()
-    print("Historical incidents seeded successfully.")
-
-def get_ollama_embedding(text: str):
-    url = f"{settings.OLLAMA_BASE_URL}/api/embeddings"
-    payload = {
-        "model": settings.OLLAMA_EMBED_MODEL,
-        "prompt": text
-    }
-    try:
-        # Use httpx synchronously for database seeding
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post(url, json=payload)
-            if resp.status_code == 200:
-                res_json = resp.json()
-                return res_json["embedding"]
-            else:
-                print(f"Ollama embedding API error: Status {resp.status_code}, {resp.text}")
-    except Exception as e:
-        print(f"Error fetching Ollama embedding: {e}")
-        
-    # Return zero-vector fallback if server is down or error occurs
-    # qwen3-embedding:4b generates 1024-dimension or 768-dimension vectors.
-    # Let's return a list of 1024 zeros.
-    return [0.0] * 1024
