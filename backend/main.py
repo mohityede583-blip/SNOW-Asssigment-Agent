@@ -32,7 +32,7 @@ async def startup_event():
     # Bootstrap the RAG knowledge base in ChromaDB with the historical seed list
     rag_engine.seed_historical_incidents(get_seed_resolved_incidents())
     # Start the periodic background fetch task
-    asyncio.create_task(periodic_snow_pull())
+    # asyncio.create_task(periodic_snow_pull())
 
 # Background task to periodically pull incidents (simulate ServiceNow webhook/polling)
 async def periodic_snow_pull():

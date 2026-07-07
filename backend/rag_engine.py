@@ -1,7 +1,7 @@
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from langchain_chroma import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_core.documents import Document
 
 from backend.config import settings
@@ -156,6 +156,12 @@ class RAGEngine:
         Metadata-only keyword search against ChromaDB. Used when the
         embedding service is unavailable so the RAG pipeline still returns
         something useful instead of nothing.
+
+        ChromaDB >=0.5 does NOT support substring matching on string
+        metadata (`$contains` is silently ignored), so we always pull the
+        full collection and filter client-side. We score each match by the
+        number of unique query tokens it contains so the results at least
+        correlate with the query.
         """
         print("Embedding service unavailable. Falling back to keyword search...")
         tokens = [w.strip().lower() for w in query.split() if len(w) > 3]
@@ -163,72 +169,58 @@ class RAGEngine:
             name=settings.CHROMA_COLLECTION_NAME
         )
 
-        rows = []
-        seen_ids = set()
-
-        if tokens:
-            for token in tokens:
-                try:
-                    res = collection.get(
-                        where={
-                            "$or": [
-                                {"short_description": {"$contains": token}},
-                                {"resolution": {"$contains": token}},
-                            ]
-                        }
-                    )
-                except Exception:
-                    # ChromaDB <0.5 uses different operator names; fall back
-                    # to an unfiltered pull and filter client-side.
-                    res = collection.get()
-                    res_ids = res.get("ids", []) or []
-                    res_metas = res.get("metadatas", []) or []
-                    res = {
-                        "ids": [
-                            i for i, m in zip(res_ids, res_metas)
-                            if token in (m or {}).get("short_description", "").lower()
-                            or token in (m or {}).get("resolution", "").lower()
-                        ],
-                        "metadatas": [
-                            m for m in res_metas
-                            if token in (m or {}).get("short_description", "").lower()
-                            or token in (m or {}).get("resolution", "").lower()
-                        ],
-                    }
-
-                for doc_id, meta in zip(
-                    res.get("ids", []) or [], res.get("metadatas", []) or []
-                ):
-                    if doc_id in seen_ids:
-                        continue
-                    seen_ids.add(doc_id)
-                    rows.append({
-                        "number": (meta or {}).get("number", ""),
-                        "short_description": (meta or {}).get("short_description", ""),
-                        "resolution": (meta or {}).get("resolution", ""),
-                        "resolved_by": (meta or {}).get("resolved_by", ""),
-                        "similarity_score": 50.0,
-                    })
-                    if len(rows) >= top_k:
-                        return rows
-
-        # Final fallback: just return the first top_k rows
-        if not rows:
+        # Pull all rows once. Empty collection -> nothing to return.
+        try:
             res = collection.get()
-            for doc_id, meta in zip(
-                res.get("ids", []) or [], res.get("metadatas", []) or []
-            ):
-                rows.append({
-                    "number": (meta or {}).get("number", ""),
-                    "short_description": (meta or {}).get("short_description", ""),
-                    "resolution": (meta or {}).get("resolution", ""),
-                    "resolved_by": (meta or {}).get("resolved_by", ""),
-                    "similarity_score": 50.0,
-                })
-                if len(rows) >= top_k:
-                    break
+        except Exception as e:
+            print(f"Keyword fallback: collection.get() failed: {e}")
+            return []
+        ids = res.get("ids", []) or []
+        metas = res.get("metadatas", []) or []
+        if not ids:
+            return []
 
-        return rows[:top_k]
+        scored = []  # (score, number, short_description, resolution, resolved_by)
+        for doc_id, meta in zip(ids, metas):
+            meta = meta or {}
+            sd = (meta.get("short_description") or "").lower()
+            rs = (meta.get("resolution") or "").lower()
+            haystack = f"{sd} {rs}"
+            # Count how many tokens appear at least once; ties broken by
+            # total token occurrences so "oracle oracle" beats "oracle".
+            unique_hits = sum(1 for t in tokens if t in haystack)
+            if unique_hits <= 0:
+                continue
+            total_hits = sum(haystack.count(t) for t in tokens)
+            scored.append((unique_hits, total_hits, {
+                "number": meta.get("number", doc_id),
+                "short_description": meta.get("short_description", ""),
+                "resolution": meta.get("resolution", ""),
+                "resolved_by": meta.get("resolved_by", ""),
+            }))
+
+        # Best matches first; if nothing matched, return the most recent rows
+        # (Chroma's insertion order) so the caller at least gets something.
+        if scored:
+            scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            rows = [
+                {**r, "similarity_score": 50.0} for _, _, r in scored[:top_k]
+            ]
+            return rows
+
+        rows = []
+        for doc_id, meta in zip(ids, metas):
+            meta = meta or {}
+            rows.append({
+                "number": meta.get("number", doc_id),
+                "short_description": meta.get("short_description", ""),
+                "resolution": meta.get("resolution", ""),
+                "resolved_by": meta.get("resolved_by", ""),
+                "similarity_score": 50.0,
+            })
+            if len(rows) >= top_k:
+                break
+        return rows
 
 
 rag_engine = RAGEngine()
