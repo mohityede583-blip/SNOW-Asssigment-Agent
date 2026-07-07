@@ -30,7 +30,7 @@ async def startup_event():
     # Initialize the database and sync/seed
     init_db()
     # Start the periodic background fetch task
-    asyncio.create_task(periodic_snow_pull())
+    # asyncio.create_task(periodic_snow_pull())
 
 # Background task to periodically pull incidents (simulate ServiceNow webhook/polling)
 async def periodic_snow_pull():
