@@ -6,11 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
+# pydantic-settings in backend.config reads .env automatically,
+# so we import settings first and then load_dotenv() as a backup
+# for any plain os.getenv() callers elsewhere in the app.
+from dotenv import load_dotenv
+load_dotenv()
+
 from backend.config import settings
 from backend.database import get_db_connection, init_db, get_seed_resolved_incidents
 from backend.servicenow_client import servicenow_client
 from backend.assignment_engine import assignment_engine
 from backend.rag_engine import rag_engine
+from langsmith.middleware import TracingMiddleware
 
 # Initialize FastAPI App
 app = FastAPI(title=settings.APP_NAME, version="1.0.0")
@@ -23,6 +30,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# adding Langsmith middleware
+app.add_middleware(TracingMiddleware)
 
 # Startup event
 @app.on_event("startup")
