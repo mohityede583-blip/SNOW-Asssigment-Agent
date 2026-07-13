@@ -152,27 +152,27 @@ export default function Dashboard({ onUpdateMetrics }) {
 
   const getPriorityBadge = (prio) => {
     switch (prio) {
-      case '1': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-950 text-red-400 border border-red-800 glow-border-red">1 - Critical</span>;
-      case '2': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-orange-950 text-orange-400 border border-orange-800">2 - High</span>;
-      case '3': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-950 text-blue-400 border border-blue-800">3 - Moderate</span>;
-      default: return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 text-slate-400 border border-slate-700">4 - Low</span>;
+      case '1': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-50 text-red-700 border border-red-200">1 - Critical</span>;
+      case '2': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-amber-55 text-amber-700 border border-amber-200">2 - High</span>;
+      case '3': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-50 text-blue-700 border border-blue-200">3 - Moderate</span>;
+      default: return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-100 text-slate-600 border border-slate-200">4 - Low</span>;
     }
   };
 
   const getStatusBadge = (status) => {
     switch (status) {
-      case 'Unassigned': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-slate-900 text-slate-400 border border-slate-700">Unassigned</span>;
-      case 'Flagged': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1 w-max"><AlertTriangle size={12}/> Human Review</span>;
-      case 'Assigned': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-950 text-blue-400 border border-blue-800 flex items-center gap-1 w-max"><UserCheck size={12}/> Assigned</span>;
-      case 'Resolved': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1 w-max"><CheckCircle size={12}/> Resolved</span>;
+      case 'Unassigned': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-slate-100 text-slate-600 border border-slate-200">Unassigned</span>;
+      case 'Flagged': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1 w-max"><AlertTriangle size={12}/> Human Review</span>;
+      case 'Assigned': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-755 border border-blue-200 flex items-center gap-1 w-max"><UserCheck size={12}/> Assigned</span>;
+      case 'Resolved': return <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 w-max"><CheckCircle size={12}/> Resolved</span>;
       default: return null;
     }
   };
 
   const getConfidenceBadge = (score) => {
-    if (score >= 80) return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1"><ShieldCheck size={16}/> {score}%</span>;
-    if (score >= 70) return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-amber-950 text-amber-400 border border-amber-800 flex items-center gap-1"><AlertTriangle size={16}/> {score}%</span>;
-    return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-red-950 text-red-400 border border-red-800 flex items-center gap-1"><ShieldAlert size={16}/> {score}% (Flagged)</span>;
+    if (score >= 80) return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"><ShieldCheck size={16}/> {score}%</span>;
+    if (score >= 70) return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1"><AlertTriangle size={16}/> {score}%</span>;
+    return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 flex items-center gap-1"><ShieldAlert size={16}/> {score}% (Flagged)</span>;
   };
 
   const unassignedIncidents = incidents.filter(i => i.status === 'Unassigned');
@@ -186,38 +186,38 @@ export default function Dashboard({ onUpdateMetrics }) {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="glass-card p-4 rounded-xl flex items-center justify-between">
           <div>
-            <p className="text-slate-400 text-sm">Unassigned Incidents</p>
-            <h3 className="text-3xl font-extrabold mt-1 text-slate-100">{unassignedIncidents.length}</h3>
+            <p className="text-slate-500 text-sm">Unassigned Incidents</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-slate-800">{unassignedIncidents.length}</h3>
           </div>
-          <div className="p-3 rounded-lg bg-slate-900 border border-slate-700">
-            <RefreshCw size={24} className="text-slate-400" />
+          <div className="p-3 rounded-lg bg-slate-100 border border-slate-200">
+            <RefreshCw size={24} className="text-slate-500" />
           </div>
         </div>
         <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-amber-500 border-l-2">
           <div>
-            <p className="text-slate-400 text-sm">Pending Human Review</p>
-            <h3 className="text-3xl font-extrabold mt-1 text-amber-400">{flaggedIncidents.length}</h3>
+            <p className="text-slate-500 text-sm">Pending Human Review</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-amber-600">{flaggedIncidents.length}</h3>
           </div>
-          <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-900">
-            <AlertTriangle size={24} className="text-amber-400" />
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+            <AlertTriangle size={24} className="text-amber-500" />
           </div>
         </div>
         <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-blue-500 border-l-2">
           <div>
-            <p className="text-slate-400 text-sm">Active Assignments</p>
-            <h3 className="text-3xl font-extrabold mt-1 text-blue-400">{assignedIncidents.length}</h3>
+            <p className="text-slate-500 text-sm">Active Assignments</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-blue-600">{assignedIncidents.length}</h3>
           </div>
-          <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-900">
-            <UserCheck size={24} className="text-blue-400" />
+          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+            <UserCheck size={24} className="text-blue-500" />
           </div>
         </div>
         <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-emerald-500 border-l-2">
           <div>
-            <p className="text-slate-400 text-sm">Resolved Tickets</p>
-            <h3 className="text-3xl font-extrabold mt-1 text-emerald-400">{resolvedIncidents.length}</h3>
+            <p className="text-slate-500 text-sm">Resolved Tickets</p>
+            <h3 className="text-3xl font-extrabold mt-1 text-emerald-600">{resolvedIncidents.length}</h3>
           </div>
-          <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-900">
-            <CheckCircle size={24} className="text-emerald-400" />
+          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+            <CheckCircle size={24} className="text-emerald-500" />
           </div>
         </div>
       </div>
@@ -227,26 +227,26 @@ export default function Dashboard({ onUpdateMetrics }) {
         <div className="flex items-center gap-3">
           <button
             onClick={handleSimulate}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition shadow-sm"
           >
-            <Play size={16} className="text-glowGreen" />
+            <Play size={16} className="text-emerald-500" />
             Simulate ServiceNow Incident
           </button>
           <button
             onClick={loadData}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition shadow-sm"
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={16} className="text-blue-500" />
             Fetch/Sync SNOW API
           </button>
         </div>
         <button
           onClick={handleAutoAssign}
           disabled={selectedIds.length === 0}
-          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition glow-border-blue ${
+          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition ${
             selectedIds.length > 0 
-              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
-              : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-sm' 
+              : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
           }`}
         >
           <Cpu size={18} />
@@ -259,19 +259,19 @@ export default function Dashboard({ onUpdateMetrics }) {
         
         {/* Incident Lists Table */}
         <div className="glass-card rounded-xl p-6 lg:col-span-8 space-y-6">
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             ServiceNow Ticket Queue
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                <tr className="border-b border-slate-200 text-slate-500 text-xs font-semibold uppercase tracking-wider">
                   <th className="py-3 px-4">
                     <input 
                       type="checkbox"
                       onChange={handleSelectAll}
                       checked={unassignedIncidents.length > 0 && selectedIds.length === unassignedIncidents.length}
-                      className="rounded bg-slate-900 border-slate-750 text-blue-500 focus:ring-blue-500"
+                      className="rounded bg-white border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                   </th>
                   <th className="py-3 px-4">Ticket</th>
@@ -282,7 +282,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-850 text-sm">
+              <tbody className="divide-y divide-slate-150 text-sm">
                 {incidents.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="py-8 text-center text-slate-500">
@@ -291,35 +291,35 @@ export default function Dashboard({ onUpdateMetrics }) {
                   </tr>
                 ) : (
                   incidents.map((inc) => (
-                    <tr key={inc.number} className="hover:bg-slate-900/40 transition">
+                    <tr key={inc.number} className="hover:bg-slate-50/50 transition">
                       <td className="py-4 px-4">
                         {inc.status === 'Unassigned' && (
                           <input 
                             type="checkbox"
                             checked={selectedIds.includes(inc.number)}
                             onChange={() => handleSelectOne(inc.number)}
-                            className="rounded bg-slate-900 border-slate-750 text-blue-500 focus:ring-blue-500"
+                            className="rounded bg-white border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
                         )}
                       </td>
-                      <td className="py-4 px-4 font-mono text-slate-300 font-semibold">{inc.number}</td>
+                      <td className="py-4 px-4 font-mono text-slate-700 font-semibold">{inc.number}</td>
                       <td className="py-4 px-4 max-w-xs">
-                        <p className="font-semibold text-slate-200 truncate">{inc.short_description}</p>
+                        <p className="font-semibold text-slate-800 truncate">{inc.short_description}</p>
                         <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>
                       </td>
                       <td className="py-4 px-4 space-y-1">
                         <div>{getPriorityBadge(inc.priority)}</div>
-                        <div className="text-xs text-slate-400">Team: <span className="font-semibold text-slate-300">{inc.category}</span></div>
+                        <div className="text-xs text-slate-500">Team: <span className="font-semibold text-slate-700">{inc.category}</span></div>
                       </td>
                       <td className="py-4 px-4">{getStatusBadge(inc.status)}</td>
-                      <td className="py-4 px-4 font-medium text-slate-300">
+                      <td className="py-4 px-4 font-medium text-slate-700">
                         {inc.assigned_to ? (
-                          <span className="text-blue-400">{inc.assigned_to}</span>
+                          <span className="text-blue-600 font-semibold">{inc.assigned_to}</span>
                         ) : (
-                          <span className="text-slate-500">—</span>
+                          <span className="text-slate-400">—</span>
                         )}
                         {inc.rejection_count > 0 && (
-                          <div className="text-[10px] text-red-400 font-semibold">Rejected x{inc.rejection_count}</div>
+                          <div className="text-[10px] text-red-650 font-semibold">Rejected x{inc.rejection_count}</div>
                         )}
                       </td>
                       <td className="py-4 px-4 text-right">
@@ -327,11 +327,9 @@ export default function Dashboard({ onUpdateMetrics }) {
                           {inc.status === 'Flagged' && (
                             <button
                               onClick={async () => {
-                                // Find recommendation log to show details
                                 try {
                                   const logs = await getLogs(inc.number);
                                   if (logs.length > 0) {
-                                    // Fetch matching candidates list
                                     const cands = logs[0].evaluated_associates || [];
                                     setActiveRecommendation({
                                       incident_number: inc.number,
@@ -345,7 +343,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                                   console.error(e);
                                 }
                               }}
-                              className="px-2 py-1 text-xs font-bold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition border border-amber-800"
+                              className="px-2.5 py-1 text-xs font-bold rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition border border-amber-200"
                             >
                               Review
                             </button>
@@ -356,7 +354,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                                 setShowResolveModal(inc.number);
                                 setResolutionText('');
                               }}
-                              className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition border border-emerald-800"
+                              className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition border border-emerald-200"
                             >
                               Resolve
                             </button>
@@ -367,13 +365,13 @@ export default function Dashboard({ onUpdateMetrics }) {
                                 setShowOverrideModal(inc.number);
                                 setSelectedAssignee('');
                               }}
-                              className="px-2 py-1 text-xs font-semibold rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition border border-slate-700"
+                              className="px-2.5 py-1 text-xs font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
                             >
                               Manual
                             </button>
                           )}
                           {inc.status === 'Resolved' && (
-                            <span className="text-xs text-slate-500 italic">Resolved</span>
+                            <span className="text-xs text-slate-400 italic">Resolved</span>
                           )}
                         </div>
                       </td>
@@ -387,26 +385,26 @@ export default function Dashboard({ onUpdateMetrics }) {
 
         {/* AI Recommendations Panel */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="glass-card rounded-xl p-6 space-y-6 border border-slate-850">
-            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <Cpu className="text-blue-500" />
-              AI Recommendation Audit
+          <div className="glass-card rounded-xl p-6 space-y-6">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Cpu className="text-blue-600" />
+              AI Audit Trail
             </h2>
 
             {activeRecommendation ? (
               <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-blue-400 font-bold">{activeRecommendation.incident_number}</span>
+                    <span className="text-xs font-mono text-blue-600 font-bold">{activeRecommendation.incident_number}</span>
                     {getConfidenceBadge(activeRecommendation.confidence_score)}
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400">Recommended Agent</p>
-                    <p className="text-lg font-bold text-slate-100 mt-0.5">{activeRecommendation.recommended_associate}</p>
+                    <p className="text-xs text-slate-500">Recommended Agent</p>
+                    <p className="text-lg font-bold text-slate-800 mt-0.5">{activeRecommendation.recommended_associate}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-slate-400">Justification Log</p>
-                    <p className="text-sm text-slate-300 mt-1 leading-relaxed italic bg-slate-950 p-2.5 rounded-lg border border-slate-850">
+                    <p className="text-xs text-slate-500">Justification Log</p>
+                    <p className="text-sm text-slate-700 mt-1 leading-relaxed italic bg-white p-3 rounded-lg border border-slate-200">
                       "{activeRecommendation.justification}"
                     </p>
                   </div>
@@ -415,14 +413,14 @@ export default function Dashboard({ onUpdateMetrics }) {
                 {/* Candidate Scoring Breakdown */}
                 {activeRecommendation.candidates && activeRecommendation.candidates.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Candidate Matches Evaluated</p>
+                    <p className="text-xs font-bold text-slate-550 uppercase tracking-wider">Candidates Evaluated</p>
                     <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
                       {activeRecommendation.candidates.map((cand) => (
-                        <div key={cand.name} className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-850 text-xs flex justify-between items-start gap-2">
+                        <div key={cand.name} className="p-2.5 rounded-lg bg-white border border-slate-200 text-xs flex justify-between items-start gap-2">
                           <div className="space-y-1">
-                            <p className="font-bold text-slate-200">{cand.name}</p>
-                            <p className="text-slate-400">Active Queue: <span className="font-semibold text-slate-300">{cand.active_tickets}</span> | Level: {cand.skill_level}</p>
-                            <div className="text-[10px] text-slate-500 leading-tight">
+                            <p className="font-bold text-slate-700">{cand.name}</p>
+                            <p className="text-slate-500">Queue: <span className="font-semibold text-slate-700">{cand.active_tickets}</span> | Level: {cand.skill_level}</p>
+                            <div className="text-[10px] text-slate-450 leading-tight">
                               {cand.score_breakdown && cand.score_breakdown.map((r, i) => (
                                 <div key={i}>• {r}</div>
                               ))}
@@ -430,8 +428,8 @@ export default function Dashboard({ onUpdateMetrics }) {
                           </div>
                           <span className={`px-2 py-0.5 font-bold rounded ${
                             cand.name === activeRecommendation.recommended_associate 
-                              ? 'bg-blue-950 text-blue-400 border border-blue-800' 
-                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                              : 'bg-slate-100 text-slate-500 border border-slate-200'
                           }`}>
                             Score: {cand.heuristic_score}
                           </span>
@@ -445,13 +443,13 @@ export default function Dashboard({ onUpdateMetrics }) {
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <button
                     onClick={() => handleApprove(activeRecommendation.incident_number, activeRecommendation.recommended_associate)}
-                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition glow-border-green"
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm"
                   >
                     <Check size={16} /> Approve
                   </button>
                   <button
                     onClick={() => handleReject(activeRecommendation.incident_number, activeRecommendation.recommended_associate)}
-                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 transition"
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-white text-red-650 hover:bg-red-50 border border-red-200 transition"
                   >
                     <X size={16} /> Reject (Escalate)
                   </button>
@@ -461,15 +459,15 @@ export default function Dashboard({ onUpdateMetrics }) {
                     setShowOverrideModal(activeRecommendation.incident_number);
                     setSelectedAssignee('');
                   }}
-                  className="w-full py-2 text-sm font-bold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition border border-slate-700 text-center"
+                  className="w-full py-2 text-sm font-bold rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 transition border border-slate-200 text-center"
                 >
                   Manual Override Assignment
                 </button>
               </div>
             ) : (
-              <div className="py-12 text-center text-slate-500 flex flex-col items-center justify-center space-y-3">
-                <Cpu size={36} className="text-slate-700" />
-                <p className="text-sm">Select an unassigned ticket and click "Auto-Assign" or click "Review" on a flagged ticket to view AI reasoning logs.</p>
+              <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center space-y-3">
+                <Cpu size={36} className="text-slate-350" />
+                <p className="text-sm">Select unassigned tickets and click "Auto-Assign" or click "Review" on a flagged ticket to view AI justifications.</p>
               </div>
             )}
           </div>
@@ -479,24 +477,24 @@ export default function Dashboard({ onUpdateMetrics }) {
 
       {/* Manual Override Modal */}
       {showOverrideModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-md p-6 rounded-xl border border-slate-800 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-100">Manual Assignment Override</h3>
-              <button onClick={() => setShowOverrideModal(null)} className="text-slate-400 hover:text-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-md p-6 rounded-xl border border-slate-200 shadow-xl space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-lg font-bold text-slate-800">Manual Assignment Override</h3>
+              <button onClick={() => setShowOverrideModal(null)} className="text-slate-400 hover:text-slate-650">
                 <X size={20} />
               </button>
             </div>
             <div className="space-y-4">
-              <p className="text-sm text-slate-400">
-                Directly route ticket <span className="font-mono text-blue-400 font-bold">{showOverrideModal}</span> to any team member.
+              <p className="text-sm text-slate-500">
+                Directly route ticket <span className="font-mono text-blue-650 font-bold">{showOverrideModal}</span> to any team member.
               </p>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Select Associate</label>
+                <label className="block text-xs font-bold text-slate-555 uppercase tracking-wide mb-2">Select Associate</label>
                 <select
                   value={selectedAssignee}
                   onChange={(e) => setSelectedAssignee(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-850 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-3 text-sm text-slate-800 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="">-- Choose Associate --</option>
                   {associates.map((assoc) => (
@@ -507,10 +505,10 @@ export default function Dashboard({ onUpdateMetrics }) {
                 </select>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
               <button
                 onClick={() => setShowOverrideModal(null)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-250 text-slate-700 border border-slate-200 transition"
               >
                 Cancel
               </button>
@@ -519,8 +517,8 @@ export default function Dashboard({ onUpdateMetrics }) {
                 disabled={!selectedAssignee}
                 className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
                   selectedAssignee 
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer glow-border-blue' 
-                    : 'bg-slate-850 text-slate-500 border border-slate-800 cursor-not-allowed'
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
+                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                 }`}
               >
                 Assign
@@ -532,36 +530,36 @@ export default function Dashboard({ onUpdateMetrics }) {
 
       {/* Resolve Incident Modal */}
       {resolveForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-lg p-6 rounded-xl border border-slate-800 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                <Database className="text-emerald-500" />
-                Resolve Incident & Save to RAG KB
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg p-6 rounded-xl border border-slate-200 shadow-xl space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Database className="text-emerald-600" />
+                Resolve Incident & Index to RAG KB
               </h3>
-              <button onClick={() => setShowResolveModal(null)} className="text-slate-400 hover:text-slate-200">
+              <button onClick={() => setShowResolveModal(null)} className="text-slate-400 hover:text-slate-650">
                 <X size={20} />
               </button>
             </div>
             <div className="space-y-4">
-              <p className="text-sm text-slate-400">
-                Provide resolution comments for ticket <span className="font-mono text-blue-400 font-bold">{resolveForm}</span>. Resolving will automatically vectorize and index this incident in the historical knowledge base for future assignments.
+              <p className="text-sm text-slate-500">
+                Provide resolution comments for ticket <span className="font-mono text-blue-650 font-bold">{resolveForm}</span>. Resolving will automatically vectorize and index this incident in the historical knowledge base for future assignments.
               </p>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Resolution Notes</label>
+                <label className="block text-xs font-bold text-slate-555 uppercase tracking-wide mb-2">Resolution Notes</label>
                 <textarea
                   rows="4"
                   value={resolutionText}
                   onChange={(e) => setResolutionText(e.target.value)}
                   placeholder="Explain how this incident was fixed. Be descriptive (mention systems, errors, codes, portal paths) to allow accurate future RAG lookups."
-                  className="w-full bg-slate-900 border border-slate-850 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none placeholder-slate-600"
+                  className="w-full bg-slate-55 border border-slate-200 rounded-lg py-2.5 px-3 text-sm text-slate-850 focus:border-blue-500 focus:outline-none placeholder-slate-400"
                 ></textarea>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
               <button
                 onClick={() => setShowResolveModal(null)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-250 text-slate-700 border border-slate-200 transition"
               >
                 Cancel
               </button>
@@ -573,8 +571,8 @@ export default function Dashboard({ onUpdateMetrics }) {
                 disabled={!resolutionText}
                 className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
                   resolutionText 
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer glow-border-green' 
-                    : 'bg-slate-850 text-slate-500 border border-slate-800 cursor-not-allowed'
+                    ? 'bg-emerald-600 hover:bg-emerald-505 text-white cursor-pointer shadow-sm' 
+                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                 }`}
               >
                 Submit & Vectorize
@@ -586,19 +584,19 @@ export default function Dashboard({ onUpdateMetrics }) {
 
       {/* Loading Overlay */}
       {isLoading && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-100/90 backdrop-blur-md">
           <div className="relative flex items-center justify-center">
             {/* Pulsing ring */}
-            <div className="absolute w-24 h-24 rounded-full border border-blue-500 animate-ping opacity-25"></div>
+            <div className="absolute w-24 h-24 rounded-full border border-blue-500 animate-ping opacity-20"></div>
             {/* Spinning ring */}
-            <div className="w-20 h-20 rounded-full border-t-2 border-r-2 border-blue-500 animate-spin"></div>
+            <div className="w-20 h-20 rounded-full border-t-2 border-r-2 border-blue-600 animate-spin"></div>
             {/* Center icon */}
-            <div className="absolute text-blue-500">
+            <div className="absolute text-blue-650">
               <Cpu size={32} className="animate-pulse" />
             </div>
           </div>
-          <p className="mt-8 text-lg font-bold text-slate-100 glow-text-blue text-center">AI System In Progress</p>
-          <pre className="mt-4 text-xs text-slate-400 max-w-md text-center leading-relaxed font-mono whitespace-pre-line bg-slate-900 p-4 rounded-xl border border-slate-800">
+          <p className="mt-8 text-lg font-bold text-slate-800 glow-text-blue text-center">AI System Processing...</p>
+          <pre className="mt-4 text-xs text-slate-600 max-w-md text-center leading-relaxed font-mono whitespace-pre-line bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             {loadingText}
           </pre>
         </div>

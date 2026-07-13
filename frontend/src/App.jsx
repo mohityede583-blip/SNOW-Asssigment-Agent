@@ -13,7 +13,7 @@ import { getIncidents } from './api';
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [unassignedCount, setUnassignedCount] = useState(0);
-  const [systemTime, setSystemTime] = useState(new Date("2026-07-05T11:06:45Z"));
+  const [systemTime, setSystemTime] = useState(new Date());
 
   const checkUnassigned = async () => {
     try {
@@ -55,16 +55,16 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
       {/* Top Header Navigation */}
-      <header className="glass-card sticky top-0 z-40 border-b border-slate-800/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <header className="glass-card sticky top-0 z-40 border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 shadow glow-border-blue">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm">
             <Cpu size={22} className="animate-pulse" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-wide text-slate-100 flex items-center gap-1.5 uppercase">
-              ServiceNow AI Agent <span className="text-[10px] bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-bold">RAG v1.0</span>
+            <h1 className="text-lg font-black tracking-wide text-slate-800 flex items-center gap-1.5 uppercase">
+              ServiceNow AI Agent <span className="text-[10px] bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full font-bold">RAG v1.0</span>
             </h1>
             <p className="text-xs text-slate-500 font-semibold tracking-wider uppercase">Intelligent Dispatch Engine</p>
           </div>
@@ -73,21 +73,21 @@ export default function App() {
         {/* System clocks and statuses */}
         <div className="flex items-center gap-4 text-xs">
           {/* Simulated clock */}
-          <div className="bg-slate-900 border border-slate-850 px-3.5 py-1.5 rounded-lg flex items-center gap-2 font-mono">
-            <Clock size={14} className="text-blue-400" />
-            <span className="text-slate-300 font-bold">{formatDate(systemTime)}</span>
-            <span className="text-slate-500">|</span>
-            <span className="text-blue-400 font-extrabold">{formatTime(systemTime)}</span>
+          <div className="bg-white border border-slate-200 px-3.5 py-1.5 rounded-lg flex items-center gap-2 font-mono shadow-sm">
+            <Clock size={14} className="text-blue-600" />
+            <span className="text-slate-650 font-bold">{formatDate(systemTime)}</span>
+            <span className="text-slate-350">|</span>
+            <span className="text-blue-600 font-extrabold">{formatTime(systemTime)}</span>
           </div>
 
           {/* Connection Status badges */}
           <div className="flex gap-2">
-            <span className="px-2.5 py-1 rounded-lg bg-emerald-950/40 text-emerald-400 border border-emerald-900/60 flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px]">
-              <CircleDot size={10} className="text-emerald-500 animate-pulse" />
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-250 flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px]">
+              <CircleDot size={10} className="text-emerald-650 animate-pulse" />
               Ollama Live
             </span>
-            <span className="px-2.5 py-1 rounded-lg bg-blue-950/40 text-blue-400 border border-blue-900/60 flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px]">
-              <Network size={10} className="text-blue-500" />
+            <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-250 flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px]">
+              <Network size={10} className="text-blue-650" />
               SNOW Simulator
             </span>
           </div>
@@ -97,7 +97,7 @@ export default function App() {
       {/* Sidebar/Main Content layout */}
       <div className="flex-grow flex flex-col md:flex-row">
         {/* Navigation Sidebar */}
-        <aside className="w-full md:w-64 bg-slate-950/30 border-r border-slate-850/80 p-4 space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
+        <aside className="w-full md:w-64 bg-slate-100/50 border-r border-slate-200 p-4 space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
           {navigationItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -107,14 +107,14 @@ export default function App() {
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all border whitespace-nowrap ${
                   isActive 
-                    ? 'bg-blue-600 text-white border-blue-500/30 shadow glow-border-blue translate-x-1' 
-                    : 'text-slate-400 bg-transparent border-transparent hover:bg-slate-900/50 hover:text-slate-200 hover:border-slate-850'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm translate-x-1' 
+                    : 'text-slate-650 bg-transparent border-transparent hover:bg-slate-200/60 hover:text-slate-900 hover:border-slate-200/50'
                 }`}
               >
                 <Icon size={18} />
                 <span className="flex-grow text-left">{item.name}</span>
                 {item.badge > 0 && (
-                  <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-650 text-white animate-pulse">
+                  <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white animate-pulse">
                     {item.badge}
                   </span>
                 )}
