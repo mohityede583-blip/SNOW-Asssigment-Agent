@@ -95,6 +95,78 @@ def get_incidents(status: Optional[str] = None):
     conn.close()
     return [dict(r) for r in rows]
 
+@app.get("/api/incidents/{number}")
+def get_incident_details(number: str):
+    """
+    Returns full incident metadata, complete AI assignment history
+    (chronological), and the current enriched assignee object.
+    404 if the incident is not found.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 1. Fetch incident
+    cursor.execute("SELECT * FROM incidents WHERE number = ?", (number,))
+    inc_row = cursor.fetchone()
+    if not inc_row:
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Incident {number} not found")
+    incident = dict(inc_row)
+
+    # Parse rejected_associates JSON string into a list for frontend convenience
+    try:
+        incident["rejected_associates"] = json.loads(incident.get("rejected_associates") or "[]")
+    except Exception:
+        incident["rejected_associates"] = []
+
+    # 2. Fetch assignment history (chronological, oldest first)
+    cursor.execute(
+        "SELECT * FROM assignment_logs WHERE incident_number = ? ORDER BY timestamp ASC",
+        (number,),
+    )
+    raw_logs = [dict(r) for r in cursor.fetchall()]
+    for log in raw_logs:
+        try:
+            log["evaluated_associates"] = json.loads(log.get("evaluated_associates") or "[]")
+        except Exception:
+            log["evaluated_associates"] = []
+    conn.close()
+
+    # 3. Enrich current assignee (per user feedback: name is enough — return only the name)
+    assignee = None
+    if incident.get("assigned_to"):
+        assignee = {"name": incident["assigned_to"]}
+
+    return {
+        "incident": incident,
+        "assignment_history": raw_logs,
+        "assignee": assignee,
+    }
+
+
+@app.get("/api/incidents/{number}/similar")
+def get_similar_incidents(number: str, top_k: int = 3):
+    """
+    Returns up to `top_k` RAG-similar resolved incidents for the given incident.
+    404 only if the incident itself is missing; an empty list is a valid result.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT short_description, description FROM incidents WHERE number = ?", (number,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Incident {number} not found")
+    query = f"{row['short_description']} {row['description']}"
+    try:
+        results = rag_engine.search_similar_incidents(query, top_k=top_k)
+        return results
+    except Exception as e:
+        # RAG failure should not 500 the page; return empty list
+        print(f"RAG similar search failed for {number}: {e}")
+        return []
+
+
 @app.post("/api/incidents/simulate")
 def simulate_incident():
     """
