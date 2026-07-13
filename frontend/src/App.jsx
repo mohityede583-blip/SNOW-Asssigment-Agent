@@ -1,19 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Cpu, Calendar, Users, Database, BarChart, 
+import {
+  Cpu, Calendar, Users, Database, BarChart,
   Clock, ShieldAlert, CircleDot, Network
 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import RosterView from './components/RosterView';
 import AssociateQueue from './components/AssociateQueue';
 import HistoryView from './components/HistoryView';
 import Metrics from './components/Metrics';
+import IncidentDetails from './components/IncidentDetails';
 import { getIncidents } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [systemTime, setSystemTime] = useState(new Date());
+
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Match /incidents/:number
+  const incidentMatch = location.pathname.match(/^\/incidents\/([^/]+)$/);
+  const incidentNumber = incidentMatch ? incidentMatch[1] : null;
+  const effectiveTab = incidentNumber ? 'incidents' : activeTab;
+
+  const handleNav = (id) => {
+    setActiveTab(id);
+    if (id === 'dashboard') navigate('/');
+    else if (id === 'roster') navigate('/roster');
+    else if (id === 'queues') navigate('/queues');
+    else if (id === 'rag') navigate('/rag');
+    else if (id === 'metrics') navigate('/metrics');
+  };
 
   const checkUnassigned = async () => {
     try {
@@ -104,10 +123,10 @@ export default function App() {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => handleNav(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all border whitespace-nowrap ${
-                  isActive 
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm translate-x-1' 
+                  isActive
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm translate-x-1'
                     : 'text-slate-650 bg-transparent border-transparent hover:bg-slate-200/60 hover:text-slate-900 hover:border-slate-200/50'
                 }`}
               >
@@ -125,11 +144,14 @@ export default function App() {
 
         {/* Main tabs renderer */}
         <main className="flex-grow p-6 md:p-8 overflow-y-auto">
-          {activeTab === 'dashboard' && <Dashboard onUpdateMetrics={checkUnassigned} />}
-          {activeTab === 'roster' && <RosterView />}
-          {activeTab === 'queues' && <AssociateQueue />}
-          {activeTab === 'rag' && <HistoryView />}
-          {activeTab === 'metrics' && <Metrics />}
+          {effectiveTab === 'dashboard' && <Dashboard onUpdateMetrics={checkUnassigned} />}
+          {effectiveTab === 'roster' && <RosterView />}
+          {effectiveTab === 'queues' && <AssociateQueue />}
+          {effectiveTab === 'rag' && <HistoryView />}
+          {effectiveTab === 'metrics' && <Metrics />}
+          {effectiveTab === 'incidents' && incidentNumber && (
+            <IncidentDetails number={incidentNumber} onUpdateMetrics={checkUnassigned} />
+          )}
         </main>
       </div>
     </div>

@@ -83,3 +83,13 @@ export const getMetrics = async () => {
   const response = await api.get('/api/metrics');
   return response.data;
 };
+
+export const getIncidentDetails = async (number) => {
+  const response = await api.get(`/api/incidents/${number}`);
+  return response.data;
+};
+
+export const getSimilarIncidents = async (number, topK = 3) => {
+  const response = await api.get(`/api/incidents/${number}/similar?top_k=${topK}`);
+  return response.data;
+};

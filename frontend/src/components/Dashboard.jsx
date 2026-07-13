@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Play, RefreshCw, CheckCircle, XCircle, AlertTriangle, 
-  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award
+import { Link } from 'react-router-dom';
+import {
+  Play, RefreshCw, CheckCircle, XCircle, AlertTriangle,
+  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award, ArrowUpRight
 } from 'lucide-react';
-import { 
-  getIncidents, simulateIncident, assignIncidents, 
-  approveAssignment, rejectAssignment, overrideAssignment, 
+import {
+  getIncidents, simulateIncident, assignIncidents,
+  approveAssignment, rejectAssignment, overrideAssignment,
   resolveIncident, getAssociates, getLogs
 } from '../api';
 
@@ -302,7 +303,16 @@ export default function Dashboard({ onUpdateMetrics }) {
                           />
                         )}
                       </td>
-                      <td className="py-4 px-4 font-mono text-slate-700 font-semibold">{inc.number}</td>
+                      <td className="py-4 px-4 font-mono text-slate-700 font-semibold">
+                        <Link
+                          to={`/incidents/${inc.number}`}
+                          className="text-blue-600 hover:text-blue-500 hover:underline transition flex items-center gap-1 w-max"
+                          title="View incident details"
+                        >
+                          {inc.number}
+                          <ArrowUpRight size={12} className="opacity-60" />
+                        </Link>
+                      </td>
                       <td className="py-4 px-4 max-w-xs">
                         <p className="font-semibold text-slate-800 truncate">{inc.short_description}</p>
                         <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>
