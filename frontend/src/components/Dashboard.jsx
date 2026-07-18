@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Play, RefreshCw, CheckCircle, XCircle, AlertTriangle, 
-  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award
+  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award,
+  ChevronDown, ChevronUp, Clock
 } from 'lucide-react';
 import { 
   getIncidents, simulateIncident, assignIncidents, 
@@ -17,7 +18,8 @@ export default function Dashboard({ onUpdateMetrics }) {
   const [loadingText, setLoadingText] = useState('');
   const [activeRecommendation, setActiveRecommendation] = useState(null);
   const [showOverrideModal, setShowOverrideModal] = useState(null); // ticket num
-  const [resolveForm, setShowResolveModal] = useState(null); // ticket num
+  const [resolveForm, setShowResolveModal] = useState(null);        // ticket num
+  const [expandedRow, setExpandedRow] = useState(null);             // expanded ticket number
 
   // Form states
   const [resolutionText, setResolutionText] = useState('');
@@ -175,10 +177,46 @@ export default function Dashboard({ onUpdateMetrics }) {
     return <span className="px-2.5 py-1 text-sm font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 flex items-center gap-1"><ShieldAlert size={16}/> {score}% (Flagged)</span>;
   };
 
+  // ── Helper badges for new SNOW fields ────────────────────────────────
+  const formatDate = (iso) => {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+    } catch { return iso; }
+  };
+
+  const getSLABadge = (slaDue) => {
+    if (!slaDue) return null;
+    const minsLeft = (new Date(slaDue) - Date.now()) / 60000;
+    if (minsLeft < 0)
+      return <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-100 text-red-700 border border-red-200 flex items-center gap-1"><Clock size={10}/> SLA BREACHED</span>;
+    if (minsLeft < 60)
+      return <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1"><Clock size={10}/> &lt;1 hr left</span>;
+    if (minsLeft < 240)
+      return <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1"><Clock size={10}/> &lt;4 hrs</span>;
+    return <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"><Clock size={10}/> On track</span>;
+  };
+
+  const IMPACT_LABELS = { '1': 'High', '2': 'Medium', '3': 'Low' };
+  const getImpactBadge = (impact) => {
+    if (!impact) return null;
+    const label = IMPACT_LABELS[impact] || impact;
+    const cls = impact === '1'
+      ? 'bg-red-50 text-red-700 border-red-200'
+      : impact === '2'
+        ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
+    return <span className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${cls}`}>{label} Impact</span>;
+  };
+  // ─────────────────────────────────────────────────────────────────────
+
   const unassignedIncidents = incidents.filter(i => i.status === 'Unassigned');
-  const flaggedIncidents = incidents.filter(i => i.status === 'Flagged');
-  const assignedIncidents = incidents.filter(i => i.status === 'Assigned');
-  const resolvedIncidents = incidents.filter(i => i.status === 'Resolved');
+  const flaggedIncidents    = incidents.filter(i => i.status === 'Flagged');
+  const assignedIncidents   = incidents.filter(i => i.status === 'Assigned');
+  const resolvedIncidents   = incidents.filter(i => i.status === 'Resolved');
 
   return (
     <div className="space-y-6">
@@ -277,6 +315,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                   <th className="py-3 px-4">Ticket</th>
                   <th className="py-3 px-4">Details</th>
                   <th className="py-3 px-4">Priority / Domain</th>
+                  <th className="py-3 px-4">SLA</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Assignee</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -285,98 +324,172 @@ export default function Dashboard({ onUpdateMetrics }) {
               <tbody className="divide-y divide-slate-150 text-sm">
                 {incidents.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="py-8 text-center text-slate-500">
+                    <td colSpan="8" className="py-8 text-center text-slate-500">
                       No incidents in queue. Click "Simulate ServiceNow Incident" to generate tickets.
                     </td>
                   </tr>
                 ) : (
-                  incidents.map((inc) => (
-                    <tr key={inc.number} className="hover:bg-slate-50/50 transition">
-                      <td className="py-4 px-4">
-                        {inc.status === 'Unassigned' && (
-                          <input 
-                            type="checkbox"
-                            checked={selectedIds.includes(inc.number)}
-                            onChange={() => handleSelectOne(inc.number)}
-                            className="rounded bg-white border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
+                  incidents.map((inc) => {
+                    const isExpanded = expandedRow === inc.number;
+                    return (
+                      <React.Fragment key={inc.number}>
+                        {/* ── Main row ── */}
+                        <tr
+                          className="hover:bg-slate-50/50 transition cursor-pointer"
+                          onClick={() => setExpandedRow(isExpanded ? null : inc.number)}
+                        >
+                          <td className="py-4 px-4" onClick={e => e.stopPropagation()}>
+                            {inc.status === 'Unassigned' && (
+                              <input 
+                                type="checkbox"
+                                checked={selectedIds.includes(inc.number)}
+                                onChange={() => handleSelectOne(inc.number)}
+                                className="rounded bg-white border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            )}
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-slate-700 font-semibold">{inc.number}</span>
+                              {isExpanded
+                                ? <ChevronUp size={14} className="text-slate-400" />
+                                : <ChevronDown size={14} className="text-slate-400" />}
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 max-w-xs">
+                            <p className="font-semibold text-slate-800 truncate">{inc.short_description}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>
+                          </td>
+                          <td className="py-4 px-4 space-y-1">
+                            <div>{getPriorityBadge(inc.priority)}</div>
+                            <div className="text-xs text-slate-500">Team: <span className="font-semibold text-slate-700">{inc.category}</span></div>
+                          </td>
+                          <td className="py-4 px-4">{getSLABadge(inc.sla_due || inc.sla_limit)}</td>
+                          <td className="py-4 px-4">{getStatusBadge(inc.status)}</td>
+                          <td className="py-4 px-4 font-medium text-slate-700">
+                            {inc.assigned_to ? (
+                              <span className="text-blue-600 font-semibold">{inc.assigned_to}</span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                            {inc.rejection_count > 0 && (
+                              <div className="text-[10px] text-red-600 font-semibold">Rejected x{inc.rejection_count}</div>
+                            )}
+                          </td>
+                          <td className="py-4 px-4 text-right" onClick={e => e.stopPropagation()}>
+                            <div className="flex justify-end gap-2">
+                              {inc.status === 'Flagged' && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const logs = await getLogs(inc.number);
+                                      if (logs.length > 0) {
+                                        const cands = logs[0].evaluated_associates || [];
+                                        setActiveRecommendation({
+                                          incident_number: inc.number,
+                                          recommended_associate: logs[0].recommended_associate,
+                                          confidence_score: logs[0].confidence_score,
+                                          justification: logs[0].justification,
+                                          candidates: cands
+                                        });
+                                      }
+                                    } catch (e) {
+                                      console.error(e);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 text-xs font-bold rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition border border-amber-200"
+                                >
+                                  Review
+                                </button>
+                              )}
+                              {inc.status === 'Assigned' && (
+                                <button
+                                  onClick={() => {
+                                    setShowResolveModal(inc.number);
+                                    setResolutionText('');
+                                  }}
+                                  className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition border border-emerald-200"
+                                >
+                                  Resolve
+                                </button>
+                              )}
+                              {inc.status !== 'Resolved' && (
+                                <button
+                                  onClick={() => {
+                                    setShowOverrideModal(inc.number);
+                                    setSelectedAssignee('');
+                                  }}
+                                  className="px-2.5 py-1 text-xs font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
+                                >
+                                  Manual
+                                </button>
+                              )}
+                              {inc.status === 'Resolved' && (
+                                <span className="text-xs text-slate-400 italic">Resolved</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* ── Expanded detail row ── */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50/70">
+                            <td colSpan="8" className="px-6 pb-4 pt-2">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                                <div className="space-y-0.5">
+                                  <p className="font-bold text-slate-500 uppercase tracking-wide">Opened At</p>
+                                  <p className="text-slate-700">{formatDate(inc.opened_at || inc.created_at)}</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="font-bold text-slate-500 uppercase tracking-wide">SLA Due</p>
+                                  <p className="text-slate-700">{formatDate(inc.sla_due || inc.sla_limit)}</p>
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="font-bold text-slate-500 uppercase tracking-wide">Impact / Severity</p>
+                                  <div className="flex gap-1 flex-wrap">
+                                    {getImpactBadge(inc.impact)}
+                                    {inc.severity && inc.severity !== inc.impact && (
+                                      <span className="px-2 py-0.5 text-[10px] rounded border bg-slate-100 text-slate-600 border-slate-200">
+                                        Sev {inc.severity}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="space-y-0.5">
+                                  <p className="font-bold text-slate-500 uppercase tracking-wide">Assignment Group</p>
+                                  <p className="text-slate-700">{inc.assignment_group || '—'}</p>
+                                </div>
+                                {inc.subcategory && (
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-slate-500 uppercase tracking-wide">Subcategory</p>
+                                    <p className="text-slate-700">{inc.subcategory}</p>
+                                  </div>
+                                )}
+                                {inc.sys_id && (
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-slate-500 uppercase tracking-wide">Sys ID</p>
+                                    <p className="font-mono text-slate-600 text-[10px]">{inc.sys_id}</p>
+                                  </div>
+                                )}
+                                {inc.incident_state && (
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-slate-500 uppercase tracking-wide">SNOW State</p>
+                                    <p className="text-slate-700">{inc.incident_state}</p>
+                                  </div>
+                                )}
+                                {inc.reopen_count > 0 && (
+                                  <div className="space-y-0.5">
+                                    <p className="font-bold text-slate-500 uppercase tracking-wide">Reopened</p>
+                                    <p className="text-amber-600 font-semibold">{inc.reopen_count}×</p>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="py-4 px-4 font-mono text-slate-700 font-semibold">{inc.number}</td>
-                      <td className="py-4 px-4 max-w-xs">
-                        <p className="font-semibold text-slate-800 truncate">{inc.short_description}</p>
-                        <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>
-                      </td>
-                      <td className="py-4 px-4 space-y-1">
-                        <div>{getPriorityBadge(inc.priority)}</div>
-                        <div className="text-xs text-slate-500">Team: <span className="font-semibold text-slate-700">{inc.category}</span></div>
-                      </td>
-                      <td className="py-4 px-4">{getStatusBadge(inc.status)}</td>
-                      <td className="py-4 px-4 font-medium text-slate-700">
-                        {inc.assigned_to ? (
-                          <span className="text-blue-600 font-semibold">{inc.assigned_to}</span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                        {inc.rejection_count > 0 && (
-                          <div className="text-[10px] text-red-650 font-semibold">Rejected x{inc.rejection_count}</div>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          {inc.status === 'Flagged' && (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const logs = await getLogs(inc.number);
-                                  if (logs.length > 0) {
-                                    const cands = logs[0].evaluated_associates || [];
-                                    setActiveRecommendation({
-                                      incident_number: inc.number,
-                                      recommended_associate: logs[0].recommended_associate,
-                                      confidence_score: logs[0].confidence_score,
-                                      justification: logs[0].justification,
-                                      candidates: cands
-                                    });
-                                  }
-                                } catch (e) {
-                                  console.error(e);
-                                }
-                              }}
-                              className="px-2.5 py-1 text-xs font-bold rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition border border-amber-200"
-                            >
-                              Review
-                            </button>
-                          )}
-                          {inc.status === 'Assigned' && (
-                            <button
-                              onClick={() => {
-                                setShowResolveModal(inc.number);
-                                setResolutionText('');
-                              }}
-                              className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition border border-emerald-200"
-                            >
-                              Resolve
-                            </button>
-                          )}
-                          {inc.status !== 'Resolved' && (
-                            <button
-                              onClick={() => {
-                                setShowOverrideModal(inc.number);
-                                setSelectedAssignee('');
-                              }}
-                              className="px-2.5 py-1 text-xs font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
-                            >
-                              Manual
-                            </button>
-                          )}
-                          {inc.status === 'Resolved' && (
-                            <span className="text-xs text-slate-400 italic">Resolved</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>

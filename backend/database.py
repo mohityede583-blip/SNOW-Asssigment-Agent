@@ -23,6 +23,15 @@ def init_db():
     """)
     
     # 2. Create Incidents Table
+    # The original 13 columns are preserved so the assignment engine, the
+    # verify script, and the React dashboard keep working unchanged.
+    # The new columns capture the full ServiceNow API payload:
+    #   - typed columns for fields the AI engine or future UI may query
+    #   - *_ref columns for reference objects (opened_by, caller_id,
+    #     assignment_group, assigned_to), stored as JSON strings of
+    #     {value, display_value, link}
+    #   - raw_payload holds the full original SNOW JSON as a safety net
+    #     for any field we didn't promote to a typed column.
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS incidents (
         number TEXT PRIMARY KEY,
@@ -37,9 +46,54 @@ def init_db():
         assigned_at TEXT,
         created_at TEXT,
         rejection_count INTEGER DEFAULT 0,
-        rejected_associates TEXT DEFAULT '[]'
+        rejected_associates TEXT DEFAULT '[]',
+
+        -- ServiceNow audit + identity
+        sys_id            TEXT,
+        sys_class_name    TEXT,
+        sys_mod_count     INTEGER DEFAULT 0,
+        sys_updated_on    TEXT,
+        sys_updated_by    TEXT,
+
+        -- ServiceNow state + impact
+        incident_state    TEXT,
+        impact            TEXT,
+        severity          TEXT,
+        subcategory       TEXT,
+
+        -- ServiceNow resolution
+        close_code        TEXT,
+        close_notes       TEXT,
+        made_sla          TEXT,
+        hold_reason       TEXT,
+        reassignment_count INTEGER DEFAULT 0,
+        reopen_count       INTEGER DEFAULT 0,
+
+        -- ServiceNow timestamps (sys_created_on vs opened_at are distinct)
+        opened_at         TEXT,
+        resolved_at       TEXT,
+        closed_at         TEXT,
+        sla_due           TEXT,
+        activity_due      TEXT,
+
+        -- Reference objects (JSON: {value, display_value, link})
+        opened_by_ref        TEXT,
+        caller_id_ref        TEXT,
+        assignment_group_ref TEXT,
+        assigned_to_ref      TEXT,
+
+        -- Full original SNOW payload (json.dumps of the API result row)
+        raw_payload        TEXT
     )
     """)
+
+    # Idempotent migration: add any new column that's missing on an older DB.
+    # Safe to run on every startup because we introspect via PRAGMA first.
+    _migrate_incidents_columns(cursor)
+
+    # Backfill: copy legacy data into the new shape so the app sees a
+    # uniform row layout regardless of when an incident was first ingested.
+    _backfill_incidents_columns(cursor)
     
     # 3. Resolved Incidents are now stored in ChromaDB (see backend/rag_engine.py)
 
@@ -66,6 +120,97 @@ def init_db():
 
     # Historical resolved incidents are now seeded into ChromaDB by rag_engine
     # at startup (see backend/main.py startup_event).
+
+# -------------------------------------------------------------------
+# Schema migration helpers (called from init_db)
+# -------------------------------------------------------------------
+# The list of columns the v2 schema adds on top of the original 13.
+# Each entry is (name, sqlite_type). New columns must be added here so
+# existing databases pick them up on the next startup. The CREATE TABLE
+# in init_db() also lists them, so a fresh DB gets them in one shot.
+_INCIDENT_NEW_COLUMNS = [
+    ("sys_id",              "TEXT"),
+    ("sys_class_name",      "TEXT"),
+    ("sys_mod_count",       "INTEGER DEFAULT 0"),
+    ("sys_updated_on",      "TEXT"),
+    ("sys_updated_by",      "TEXT"),
+    ("incident_state",      "TEXT"),
+    ("impact",              "TEXT"),
+    ("severity",            "TEXT"),
+    ("subcategory",         "TEXT"),
+    ("close_code",          "TEXT"),
+    ("close_notes",         "TEXT"),
+    ("made_sla",            "TEXT"),
+    ("hold_reason",         "TEXT"),
+    ("reassignment_count",  "INTEGER DEFAULT 0"),
+    ("reopen_count",        "INTEGER DEFAULT 0"),
+    ("opened_at",           "TEXT"),
+    ("resolved_at",         "TEXT"),
+    ("closed_at",           "TEXT"),
+    ("sla_due",             "TEXT"),
+    ("activity_due",        "TEXT"),
+    ("opened_by_ref",       "TEXT"),
+    ("caller_id_ref",       "TEXT"),
+    ("assignment_group_ref","TEXT"),
+    ("assigned_to_ref",     "TEXT"),
+    ("raw_payload",         "TEXT"),
+]
+
+
+def _column_exists(cursor, table, column):
+    """Return True if `column` is already present on `table`."""
+    cursor.execute(f"PRAGMA table_info({table})")
+    return any(row[1] == column for row in cursor.fetchall())
+
+
+def _migrate_incidents_columns(cursor):
+    """
+    Add any column from _INCIDENT_NEW_COLUMNS that isn't already on the
+    `incidents` table. Idempotent: re-running it is a no-op once every
+    column is present.
+    """
+    for col_name, col_type in _INCIDENT_NEW_COLUMNS:
+        if not _column_exists(cursor, "incidents", col_name):
+            cursor.execute(
+                f"ALTER TABLE incidents ADD COLUMN {col_name} {col_type}"
+            )
+
+
+def _backfill_incidents_columns(cursor):
+    """
+    Populate the new columns from the legacy ones where possible so the
+    app sees a uniform row layout. This is best-effort: it only writes
+    a cell if the new column is currently NULL and the source is not.
+    """
+    # sla_limit -> sla_due. The legacy schema had only sla_limit; the new
+    # schema has both, and sla_due is the SNOW-canonical name.
+    cursor.execute(
+        """
+        UPDATE incidents
+        SET sla_due = sla_limit
+        WHERE sla_due IS NULL AND sla_limit IS NOT NULL
+        """
+    )
+
+    # Wrap legacy `assigned_to` plain strings into the new
+    # {value, display_value, link} JSON shape. The display name is the
+    # only signal the legacy column carries, so value/link are NULL.
+    # Uses SQLite's built-in json_object() to avoid Python-side string
+    # interpolation of untrusted display names.
+    cursor.execute(
+        """
+        UPDATE incidents
+        SET assigned_to_ref = json_object(
+            'value',         NULL,
+            'display_value', assigned_to,
+            'link',          NULL
+        )
+        WHERE assigned_to_ref IS NULL AND assigned_to IS NOT NULL
+        """
+    )
+
+    # assignment_group_ref has no legacy counterpart, so old rows keep
+    # NULL there until a future ServiceNow refresh populates it.
 
 def sync_associates_from_roster():
     print("Syncing associates from shift roster Excel...")

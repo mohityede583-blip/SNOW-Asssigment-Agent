@@ -17,6 +17,7 @@ from backend.database import get_db_connection, init_db, get_seed_resolved_incid
 from backend.servicenow_client import servicenow_client
 from backend.assignment_engine import assignment_engine
 from backend.rag_engine import rag_engine
+from backend.snow_refs import ref_display
 from langsmith.middleware import TracingMiddleware
 
 # Initialize FastAPI App
@@ -82,6 +83,26 @@ class WorkloadRequest(BaseModel):
     amount: int
 
 
+# Internal columns that should never be sent to the frontend.
+# *_ref columns are JSON blobs for engine use only; raw_payload can be huge.
+_INTERNAL_COLUMNS = frozenset({
+    "opened_by_ref", "caller_id_ref",
+    "assignment_group_ref", "assigned_to_ref",
+    "raw_payload",
+})
+
+
+def _sanitize_incident(row: dict) -> dict:
+    """
+    Strip internal columns from a DB row and inject clean display strings
+    so the frontend never needs to parse JSON reference blobs.
+    """
+    out = {k: v for k, v in row.items() if k not in _INTERNAL_COLUMNS}
+    # Unwrap assignment_group from its JSON ref so the UI gets a plain string.
+    out["assignment_group"] = ref_display(row.get("assignment_group_ref"))
+    return out
+
+
 # API Endpoints
 @app.get("/api/incidents")
 def get_incidents(status: Optional[str] = None):
@@ -93,30 +114,118 @@ def get_incidents(status: Optional[str] = None):
         cursor.execute("SELECT * FROM incidents ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_sanitize_incident(dict(r)) for r in rows]
 
 @app.post("/api/incidents/simulate")
 def simulate_incident():
     """
-    Manually triggers the ingestion of a single simulated incident.
+    Manually triggers ingestion of a single simulated incident using the
+    same full-schema upsert path as the real ServiceNow sync, so all new
+    typed columns (sys_id, sla_due, impact, severity, opened_at, *_ref …)
+    are populated correctly on every simulated row.
     """
     try:
-        new_tickets = [servicenow_client.simulate_single_incident()]
+        ticket = servicenow_client.simulate_single_incident()
         conn = get_db_connection()
         cursor = conn.cursor()
-        for ticket in new_tickets:
-            cursor.execute("""
-            INSERT INTO incidents (number, short_description, description, category, priority, urgency, sla_limit, status, assigned_to, assigned_at, created_at, rejection_count, rejected_associates)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '[]')
-            """, (
-                ticket["number"], ticket["short_description"], ticket["description"],
-                ticket["category"], ticket["priority"], ticket["urgency"],
-                ticket["sla_limit"], ticket["status"], ticket["assigned_to"],
-                ticket["assigned_at"], ticket["created_at"]
-            ))
+        row = {
+            "number":             ticket["number"],
+            "short_description":  ticket["short_description"],
+            "description":        ticket["description"],
+            "category":           ticket.get("category") or "L1 Support",
+            "priority":           ticket.get("priority") or "3",
+            "urgency":            ticket.get("urgency") or "3",
+            "sla_limit":          ticket.get("sla_limit"),
+            "status":             ticket.get("status") or "Unassigned",
+            "assigned_to":        ticket.get("assigned_to"),
+            "assigned_at":        ticket.get("assigned_at"),
+            "created_at":         ticket.get("created_at"),
+            "rejection_count":    ticket.get("rejection_count", 0),
+            "rejected_associates":ticket.get("rejected_associates", "[]"),
+            "sys_id":             ticket.get("sys_id"),
+            "sys_class_name":     ticket.get("sys_class_name"),
+            "sys_mod_count":      ticket.get("sys_mod_count", 0),
+            "sys_updated_on":     ticket.get("sys_updated_on"),
+            "sys_updated_by":     ticket.get("sys_updated_by"),
+            "incident_state":     ticket.get("incident_state"),
+            "impact":             ticket.get("impact"),
+            "severity":           ticket.get("severity"),
+            "subcategory":        ticket.get("subcategory"),
+            "close_code":         ticket.get("close_code"),
+            "close_notes":        ticket.get("close_notes"),
+            "made_sla":           ticket.get("made_sla"),
+            "hold_reason":        ticket.get("hold_reason"),
+            "reassignment_count": ticket.get("reassignment_count", 0),
+            "reopen_count":       ticket.get("reopen_count", 0),
+            "opened_at":          ticket.get("opened_at"),
+            "resolved_at":        ticket.get("resolved_at"),
+            "closed_at":          ticket.get("closed_at"),
+            "sla_due":            ticket.get("sla_due"),
+            "activity_due":       ticket.get("activity_due"),
+            "opened_by_ref":      ticket.get("opened_by_ref"),
+            "caller_id_ref":      ticket.get("caller_id_ref"),
+            "assignment_group_ref": ticket.get("assignment_group_ref"),
+            "assigned_to_ref":    ticket.get("assigned_to_ref"),
+            "raw_payload":        ticket.get("raw_payload"),
+        }
+        cursor.execute("""
+        INSERT INTO incidents (
+            number, short_description, description, category, priority, urgency,
+            sla_limit, status, assigned_to, assigned_at, created_at,
+            rejection_count, rejected_associates,
+            sys_id, sys_class_name, sys_mod_count, sys_updated_on, sys_updated_by,
+            incident_state, impact, severity, subcategory, close_code, close_notes,
+            made_sla, hold_reason, reassignment_count, reopen_count,
+            opened_at, resolved_at, closed_at, sla_due, activity_due,
+            opened_by_ref, caller_id_ref, assignment_group_ref, assigned_to_ref,
+            raw_payload
+        ) VALUES (
+            :number, :short_description, :description, :category, :priority, :urgency,
+            :sla_limit, :status, :assigned_to, :assigned_at, :created_at,
+            :rejection_count, :rejected_associates,
+            :sys_id, :sys_class_name, :sys_mod_count, :sys_updated_on, :sys_updated_by,
+            :incident_state, :impact, :severity, :subcategory, :close_code, :close_notes,
+            :made_sla, :hold_reason, :reassignment_count, :reopen_count,
+            :opened_at, :resolved_at, :closed_at, :sla_due, :activity_due,
+            :opened_by_ref, :caller_id_ref, :assignment_group_ref, :assigned_to_ref,
+            :raw_payload
+        )
+        ON CONFLICT(number) DO UPDATE SET
+            short_description    = excluded.short_description,
+            description          = excluded.description,
+            category             = excluded.category,
+            priority             = excluded.priority,
+            urgency              = excluded.urgency,
+            sla_limit            = excluded.sla_limit,
+            sys_id               = excluded.sys_id,
+            sys_class_name       = excluded.sys_class_name,
+            sys_mod_count        = excluded.sys_mod_count,
+            sys_updated_on       = excluded.sys_updated_on,
+            sys_updated_by       = excluded.sys_updated_by,
+            incident_state       = excluded.incident_state,
+            impact               = excluded.impact,
+            severity             = excluded.severity,
+            subcategory          = excluded.subcategory,
+            close_code           = excluded.close_code,
+            close_notes          = excluded.close_notes,
+            made_sla             = excluded.made_sla,
+            hold_reason          = excluded.hold_reason,
+            reassignment_count   = excluded.reassignment_count,
+            reopen_count         = excluded.reopen_count,
+            opened_at            = excluded.opened_at,
+            resolved_at          = excluded.resolved_at,
+            closed_at            = excluded.closed_at,
+            sla_due              = excluded.sla_due,
+            activity_due         = excluded.activity_due,
+            opened_by_ref        = excluded.opened_by_ref,
+            caller_id_ref        = excluded.caller_id_ref,
+            assignment_group_ref = excluded.assignment_group_ref,
+            assigned_to_ref      = excluded.assigned_to_ref,
+            raw_payload          = excluded.raw_payload
+        """, row)
         conn.commit()
         conn.close()
-        return {"status": "success", "incident": new_tickets[0]}
+        return {"status": "success", "incident": _sanitize_incident(row)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -358,6 +467,7 @@ def get_associates():
 def get_roster_data():
     """
     Returns the shiftDefinitions and calendar details for all associates.
+    Uses the current real month/year so the calendar is always accurate.
     """
     roster_mgr = assignment_engine.roster_mgr
     conn = get_db_connection()
@@ -375,7 +485,12 @@ def get_roster_data():
         
         days_shifts = {}
         for day in range(1, 32):
-            test_dt = datetime(2026, 7, day, 12, 0)  # July 2026
+            # Use current year + month so the calendar always shows today's month
+            try:
+                test_dt = datetime(now.year, now.month, day, 12, 0)
+            except ValueError:
+                # Day doesn't exist in this month (e.g. day 31 in April)
+                break
             acronym = roster_mgr.get_shift_for_date(name, domain, test_dt)
             days_shifts[str(day)] = acronym
             

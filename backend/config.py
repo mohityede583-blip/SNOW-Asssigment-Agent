@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     CHROMA_COLLECTION_NAME: str = "resolved_incidents"
 
     # ServiceNow Settings
-    SERVICENOW_URL: str = ""
-    SERVICENOW_USER: str = ""
-    SERVICENOW_PASSWORD: str = ""
+    SERVICENOW_URL: str = os.getenv("SERVICENOW_URL")
+    SERVICENOW_USER: str = os.getenv("SERVICENOW_USER")
+    SERVICENOW_PASSWORD: str = os.getenv("SERVICENOW_PASSWORD")
 
     # Roster Settings
     ROSTER_FILE_PATH: str = os.path.join(
