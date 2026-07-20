@@ -10,7 +10,7 @@ import {
   resolveIncident, getAssociates, getLogs
 } from '../api';
 
-export default function Dashboard({ onUpdateMetrics }) {
+export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
   const [incidents, setIncidents] = useState([]);
   const [associates, setAssociates] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -350,12 +350,21 @@ export default function Dashboard({ onUpdateMetrics }) {
                           </td>
                           <td className="py-4 px-4">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-mono text-slate-700 font-semibold">{inc.number}</span>
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onSelectIncident) onSelectIncident(inc.number);
+                                }}
+                                className="font-mono text-blue-600 hover:text-blue-800 hover:underline font-bold cursor-pointer"
+                              >
+                                {inc.number}
+                              </span>
                               {isExpanded
                                 ? <ChevronUp size={14} className="text-slate-400" />
                                 : <ChevronDown size={14} className="text-slate-400" />}
                             </div>
                           </td>
+
                           <td className="py-4 px-4 max-w-xs">
                             <p className="font-semibold text-slate-800 truncate">{inc.short_description}</p>
                             <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>

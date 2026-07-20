@@ -100,6 +100,11 @@ def _sanitize_incident(row: dict) -> dict:
     out = {k: v for k, v in row.items() if k not in _INTERNAL_COLUMNS}
     # Unwrap assignment_group from its JSON ref so the UI gets a plain string.
     out["assignment_group"] = ref_display(row.get("assignment_group_ref"))
+    # rejected_associates is stored as a JSON-encoded string — give the UI a real list.
+    try:
+        out["rejected_associates"] = json.loads(out.get("rejected_associates") or "[]")
+    except (ValueError, TypeError):
+        out["rejected_associates"] = []
     return out
 
 
@@ -115,6 +120,68 @@ def get_incidents(status: Optional[str] = None):
     rows = cursor.fetchall()
     conn.close()
     return [_sanitize_incident(dict(r)) for r in rows]
+
+@app.get("/api/incidents/{number}")
+def get_incident_details(number: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM incidents WHERE number = ?", (number,))
+    inc_row = cursor.fetchone()
+    
+    if not inc_row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Incident not found")
+        
+    incident = dict(inc_row)
+    
+    # Fetch assignment history logs
+    cursor.execute("SELECT * FROM assignment_logs WHERE incident_number = ? ORDER BY timestamp DESC", (number,))
+    logs_rows = cursor.fetchall()
+    
+    # Fetch assignee details
+    assignee = None
+    if incident.get("assigned_to"):
+        cursor.execute("SELECT * FROM associates WHERE name = ?", (incident["assigned_to"],))
+        assoc_row = cursor.fetchone()
+        if assoc_row:
+            assignee = dict(assoc_row)
+            
+    conn.close()
+    
+    # Parse evaluation lists in logs
+    logs = []
+    for r in logs_rows:
+        log_dict = dict(r)
+        try:
+            log_dict["evaluated_associates"] = json.loads(log_dict["evaluated_associates"] or "[]")
+        except:
+            log_dict["evaluated_associates"] = []
+        logs.append(log_dict)
+        
+    return {
+        "incident": _sanitize_incident(incident),
+        "assignment_history": logs,
+        "assignee": assignee
+    }
+
+@app.get("/api/incidents/{number}/similar")
+def get_similar_incidents(number: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT short_description, description FROM incidents WHERE number = ?", (number,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Incident not found")
+        
+    query = f"{row['short_description']} {row['description'] or ''}"
+    try:
+        matches = rag_engine.search_similar_incidents(query, top_k=3)
+        return matches
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/incidents/simulate")
 def simulate_incident():

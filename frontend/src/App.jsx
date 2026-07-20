@@ -8,10 +8,12 @@ import RosterView from './components/RosterView';
 import AssociateQueue from './components/AssociateQueue';
 import HistoryView from './components/HistoryView';
 import Metrics from './components/Metrics';
+import IncidentDetails from './components/IncidentDetails';
 import { getIncidents } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedIncidentNumber, setSelectedIncidentNumber] = useState(null);
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [systemTime, setSystemTime] = useState(new Date());
 
@@ -100,11 +102,14 @@ export default function App() {
         <aside className="w-full md:w-64 bg-slate-100/50 border-r border-slate-200 p-4 space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
           {navigationItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            const isActive = activeTab === item.id && !selectedIncidentNumber;
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setSelectedIncidentNumber(null);
+                  setActiveTab(item.id);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all border whitespace-nowrap ${
                   isActive 
                     ? 'bg-blue-600 text-white border-blue-600 shadow-sm translate-x-1' 
@@ -125,11 +130,21 @@ export default function App() {
 
         {/* Main tabs renderer */}
         <main className="flex-grow p-6 md:p-8 overflow-y-auto">
-          {activeTab === 'dashboard' && <Dashboard onUpdateMetrics={checkUnassigned} />}
-          {activeTab === 'roster' && <RosterView />}
-          {activeTab === 'queues' && <AssociateQueue />}
-          {activeTab === 'rag' && <HistoryView />}
-          {activeTab === 'metrics' && <Metrics />}
+          {selectedIncidentNumber ? (
+            <IncidentDetails 
+              number={selectedIncidentNumber} 
+              onClose={() => setSelectedIncidentNumber(null)} 
+              onUpdateMetrics={checkUnassigned} 
+            />
+          ) : (
+            <>
+              {activeTab === 'dashboard' && <Dashboard onUpdateMetrics={checkUnassigned} onSelectIncident={(num) => setSelectedIncidentNumber(num)} />}
+              {activeTab === 'roster' && <RosterView />}
+              {activeTab === 'queues' && <AssociateQueue />}
+              {activeTab === 'rag' && <HistoryView />}
+              {activeTab === 'metrics' && <Metrics />}
+            </>
+          )}
         </main>
       </div>
     </div>
