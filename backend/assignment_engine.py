@@ -1,6 +1,8 @@
 import json
 from datetime import datetime
-import httpx
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, SystemMessage
+from langsmith import traceable
 from backend.config import settings
 from backend.database import get_db_connection
 from backend.roster_manager import RosterManager
@@ -9,8 +11,13 @@ from backend.rag_engine import rag_engine
 class AssignmentEngine:
     def __init__(self):
         self.roster_mgr = RosterManager()
-        self.ollama_url = f"{settings.OLLAMA_BASE_URL}/api/generate"
-        self.model_name = settings.OLLAMA_TEXT_MODEL
+        # ChatOllama goes through LangChain, so every .invoke() is auto-traced
+        # by LangSmith when LANGSMITH_TRACING=true is in the environment.
+        self.llm = ChatOllama(
+            base_url=settings.OLLAMA_BASE_URL,
+            model=settings.OLLAMA_TEXT_MODEL,
+            temperature=0.1,
+        )
 
     def get_candidate_associates(self, category: str, dt: datetime, rejected_list: list) -> tuple[list, str]:
         """
@@ -127,6 +134,7 @@ class AssignmentEngine:
         scored_candidates.sort(key=lambda x: x["heuristic_score"], reverse=True)
         return scored_candidates
 
+    @traceable(name="execute_assignment", run_type="chain")
     def execute_assignment(self, incident_number: str) -> dict:
         """
         Retrieves incident details, runs the scoring heuristic, invokes the Ollama LLM
@@ -134,7 +142,7 @@ class AssignmentEngine:
         """
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+        print('api key',settings.LANGSMITH_ENDPOINT)
         # 1. Fetch incident
         cursor.execute("SELECT * FROM incidents WHERE number = ?", (incident_number,))
         inc_row = cursor.fetchone()
@@ -230,12 +238,13 @@ class AssignmentEngine:
             "candidates": scored_candidates
         }
 
+    @traceable(name="build_ollama_prompt", run_type="chain")
     def build_ollama_prompt(self, incident: dict, candidates: list, rag_matches: list, route_status: str) -> str:
         candidates_str = ""
         for c in candidates:
             candidates_str += f"- Name: {c['name']}, Domain: {c['domain']}, Skill Level: {c['skill_level']}, Active Tickets: {c['active_tickets']}, Heuristic Score: {c['heuristic_score']}\n"
             candidates_str += f"  Factors: {', '.join(c['score_breakdown'])}\n"
-            
+        print("BUILD OLLAMA CALLED")
         rag_str = ""
         if rag_matches:
             for i, m in enumerate(rag_matches):
@@ -279,50 +288,56 @@ You MUST respond with a single JSON object. Do not include markdown wraps (like 
 """
         return prompt
 
+    @traceable(name="call_ollama_llm", run_type="llm")
     def call_ollama_llm(self, prompt: str, default_candidate: str) -> dict:
-        url = self.ollama_url
-        payload = {
-            "model": self.model_name,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.1
-            }
-        }
-        
+        """
+        Calls Ollama through ChatOllama so the request/response is captured
+        as a single LLM run in LangSmith. Falls back to the top heuristic
+        candidate if Ollama is unreachable or returns unparseable JSON.
+        """
+        print("CALL OLLAMA CALLED")
         try:
-            with httpx.Client(timeout=90.0) as client:
-                resp = client.post(url, json=payload)
-                if resp.status_code == 200:
-                    text_out = resp.json()["response"].strip()
-                    
-                    # Clean markdown codeblocks if LLM returned them despite instruction
-                    if text_out.startswith("```"):
-                        # strip ```json and ```
-                        lines = text_out.split("\n")
-                        if lines[0].startswith("```"):
-                            lines = lines[1:]
-                        if lines[-1].startswith("```"):
-                            lines = lines[:-1]
-                        text_out = "\n".join(lines).strip()
-                        
-                    res_json = json.loads(text_out)
-                    
-                    # Validate keys
-                    if "recommended_associate" in res_json and "confidence_score" in res_json:
-                        return {
-                            "recommended_associate": res_json["recommended_associate"],
-                            "confidence_score": float(res_json["confidence_score"]),
-                            "justification": res_json.get("justification", "Assigned based on skill profile and shift schedule.")
-                        }
+            response = self.llm.invoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "You are an AI Dispatcher for ServiceNow incidents. "
+                            "Always respond with valid JSON matching the requested "
+                            "schema. No markdown fences."
+                        )
+                    ),
+                    HumanMessage(content=prompt),
+                ]
+            )
+            text_out = (response.content or "").strip()
+
+            # Strip markdown fences if the model still added them
+            if text_out.startswith("```"):
+                lines = text_out.split("\n")
+                if lines and lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                text_out = "\n".join(lines).strip()
+
+            res_json = json.loads(text_out)
+            if "recommended_associate" in res_json and "confidence_score" in res_json:
+                return {
+                    "recommended_associate": res_json["recommended_associate"],
+                    "confidence_score": float(res_json["confidence_score"]),
+                    "justification": res_json.get(
+                        "justification",
+                        "Assigned based on skill profile and shift schedule.",
+                    ),
+                }
         except Exception as e:
             print(f"Error calling Ollama LLM or parsing response: {e}")
-            
+
         # Fallback to the top candidate from heuristic scoring if LLM fails
         return {
             "recommended_associate": default_candidate,
             "confidence_score": 65.0,  # Below 70% threshold so it goes to human review
-            "justification": f"Fallback: Ollama generation failed. Selected highest ranking heuristic candidate {default_candidate}. Requires manual auditing."
+            "justification": f"Fallback: Ollama generation failed. Selected highest ranking heuristic candidate {default_candidate}. Requires manual auditing.",
         }
 
 assignment_engine = AssignmentEngine()
