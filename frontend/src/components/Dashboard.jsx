@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Play, RefreshCw, CheckCircle, XCircle, AlertTriangle, 
-  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award
+  Play, RefreshCw, CheckCircle, AlertTriangle, 
+  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck
 } from 'lucide-react';
 import { 
   getIncidents, simulateIncident, assignIncidents, 
   approveAssignment, rejectAssignment, overrideAssignment, 
-  resolveIncident, getAssociates, getLogs
+  getAssociates, getLogs
 } from '../api';
 
 export default function Dashboard({ onUpdateMetrics }) {
@@ -17,30 +17,29 @@ export default function Dashboard({ onUpdateMetrics }) {
   const [loadingText, setLoadingText] = useState('');
   const [activeRecommendation, setActiveRecommendation] = useState(null);
   const [showOverrideModal, setShowOverrideModal] = useState(null); // ticket num
-  const [resolveForm, setShowResolveModal] = useState(null); // ticket num
 
   // Form states
-  const [resolutionText, setResolutionText] = useState('');
   const [selectedAssignee, setSelectedAssignee] = useState('');
 
-  const loadData = async () => {
+  // Memoized loadData function to prevent unnecessary re-renders in useEffect
+  const loadData = useCallback(async () => {
     try {
       const incData = await getIncidents();
       const assocData = await getAssociates();
-      setIncidents(incData);
-      setAssociates(assocData);
+      setIncidents(Array.isArray(incData) ? incData : []);
+      setAssociates(Array.isArray(assocData) ? assocData : []);
       if (onUpdateMetrics) onUpdateMetrics();
     } catch (err) {
       console.error("Error loading dashboard data:", err);
     }
-  };
+  }, [onUpdateMetrics]);
 
   useEffect(() => {
     loadData();
     // Poll for new incidents every 15 seconds
     const interval = setInterval(loadData, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadData]);
 
   const handleSelectAll = (e) => {
     if (e.target.checked) {
@@ -82,10 +81,10 @@ export default function Dashboard({ onUpdateMetrics }) {
       await loadData();
       setSelectedIds([]);
       
-      // If we assigned a single ticket, show its recommendation audit log details
-      if (results.length === 1 && results[0].status === 'success') {
+      // If single ticket assignment
+      if (results && results.length === 1 && results[0].status === 'success') {
         setActiveRecommendation(results[0]);
-      } else {
+      } else if (results) {
         alert(`Successfully processed ${results.length} ticket(s) with AI! Check flagged tickets in dashboard.`);
       }
     } catch (err) {
@@ -112,7 +111,7 @@ export default function Dashboard({ onUpdateMetrics }) {
     try {
       const res = await rejectAssignment(number, assignee);
       await loadData();
-      if (res.reassignment && res.reassignment.status === 'success') {
+      if (res && res.reassignment && res.reassignment.status === 'success') {
         setActiveRecommendation(res.reassignment);
       } else {
         setActiveRecommendation(null);
@@ -138,21 +137,9 @@ export default function Dashboard({ onUpdateMetrics }) {
     }
   };
 
-  const handleResolve = async (number, resolvedBy) => {
-    if (!resolutionText) return;
-    try {
-      await resolveIncident(number, resolutionText, resolvedBy);
-      setShowResolveModal(null);
-      setResolutionText('');
-      await loadData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const getPriorityBadge = (prio) => {
     switch (prio) {
-      case '1': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-950 text-red-400 border border-red-800 glow-border-red">1 - Critical</span>;
+      case '1': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-950 text-red-400 border border-red-800">1 - Critical</span>;
       case '2': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-orange-950 text-orange-400 border border-orange-800">2 - High</span>;
       case '3': return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-950 text-blue-400 border border-blue-800">3 - Moderate</span>;
       default: return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 text-slate-400 border border-slate-700">4 - Low</span>;
@@ -182,7 +169,7 @@ export default function Dashboard({ onUpdateMetrics }) {
 
   return (
     <div className="space-y-6">
-      {/* Header Cards Summary */}
+      {/* Summary Header Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="glass-card p-4 rounded-xl flex items-center justify-between">
           <div>
@@ -222,19 +209,19 @@ export default function Dashboard({ onUpdateMetrics }) {
         </div>
       </div>
 
-      {/* Action Buttons bar */}
+      {/* Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 glass-card rounded-xl">
         <div className="flex items-center gap-3">
           <button
             onClick={handleSimulate}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
           >
-            <Play size={16} className="text-glowGreen" />
+            <Play size={16} className="text-emerald-400" />
             Simulate ServiceNow Incident
           </button>
           <button
             onClick={loadData}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-750 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
           >
             <RefreshCw size={16} />
             Fetch/Sync SNOW API
@@ -243,9 +230,9 @@ export default function Dashboard({ onUpdateMetrics }) {
         <button
           onClick={handleAutoAssign}
           disabled={selectedIds.length === 0}
-          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition glow-border-blue ${
+          className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition ${
             selectedIds.length > 0 
-              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
+              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg shadow-blue-500/20' 
               : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
           }`}
         >
@@ -254,10 +241,10 @@ export default function Dashboard({ onUpdateMetrics }) {
         </button>
       </div>
 
-      {/* Main dashboard lists */}
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Incident Lists Table */}
+        {/* Ticket Table */}
         <div className="glass-card rounded-xl p-6 lg:col-span-8 space-y-6">
           <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
             ServiceNow Ticket Queue
@@ -282,7 +269,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-850 text-sm">
+              <tbody className="divide-y divide-slate-800 text-sm">
                 {incidents.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="py-8 text-center text-slate-500">
@@ -327,11 +314,9 @@ export default function Dashboard({ onUpdateMetrics }) {
                           {inc.status === 'Flagged' && (
                             <button
                               onClick={async () => {
-                                // Find recommendation log to show details
                                 try {
                                   const logs = await getLogs(inc.number);
-                                  if (logs.length > 0) {
-                                    // Fetch matching candidates list
+                                  if (logs && logs.length > 0) {
                                     const cands = logs[0].evaluated_associates || [];
                                     setActiveRecommendation({
                                       incident_number: inc.number,
@@ -348,17 +333,6 @@ export default function Dashboard({ onUpdateMetrics }) {
                               className="px-2 py-1 text-xs font-bold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition border border-amber-800"
                             >
                               Review
-                            </button>
-                          )}
-                          {inc.status === 'Assigned' && (
-                            <button
-                              onClick={() => {
-                                setShowResolveModal(inc.number);
-                                setResolutionText('');
-                              }}
-                              className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition border border-emerald-800"
-                            >
-                              Resolve
                             </button>
                           )}
                           {inc.status !== 'Resolved' && (
@@ -387,7 +361,7 @@ export default function Dashboard({ onUpdateMetrics }) {
 
         {/* AI Recommendations Panel */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="glass-card rounded-xl p-6 space-y-6 border border-slate-850">
+          <div className="glass-card rounded-xl p-6 space-y-6 border border-slate-800">
             <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
               <Cpu className="text-blue-500" />
               AI Recommendation Audit
@@ -406,7 +380,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                   </div>
                   <div>
                     <p className="text-xs text-slate-400">Justification Log</p>
-                    <p className="text-sm text-slate-300 mt-1 leading-relaxed italic bg-slate-950 p-2.5 rounded-lg border border-slate-850">
+                    <p className="text-sm text-slate-300 mt-1 leading-relaxed italic bg-slate-950 p-2.5 rounded-lg border border-slate-800">
                       "{activeRecommendation.justification}"
                     </p>
                   </div>
@@ -418,7 +392,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Candidate Matches Evaluated</p>
                     <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
                       {activeRecommendation.candidates.map((cand) => (
-                        <div key={cand.name} className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-850 text-xs flex justify-between items-start gap-2">
+                        <div key={cand.name} className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 text-xs flex justify-between items-start gap-2">
                           <div className="space-y-1">
                             <p className="font-bold text-slate-200">{cand.name}</p>
                             <p className="text-slate-400">Active Queue: <span className="font-semibold text-slate-300">{cand.active_tickets}</span> | Level: {cand.skill_level}</p>
@@ -441,11 +415,11 @@ export default function Dashboard({ onUpdateMetrics }) {
                   </div>
                 )}
 
-                {/* Recommendation Actions */}
+                {/* Actions */}
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   <button
                     onClick={() => handleApprove(activeRecommendation.incident_number, activeRecommendation.recommended_associate)}
-                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition glow-border-green"
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition"
                   >
                     <Check size={16} /> Approve
                   </button>
@@ -496,7 +470,7 @@ export default function Dashboard({ onUpdateMetrics }) {
                 <select
                   value={selectedAssignee}
                   onChange={(e) => setSelectedAssignee(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-850 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="">-- Choose Associate --</option>
                   {associates.map((assoc) => (
@@ -519,65 +493,11 @@ export default function Dashboard({ onUpdateMetrics }) {
                 disabled={!selectedAssignee}
                 className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
                   selectedAssignee 
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer glow-border-blue' 
-                    : 'bg-slate-850 text-slate-500 border border-slate-800 cursor-not-allowed'
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
+                    : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
                 }`}
               >
                 Assign
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Resolve Incident Modal */}
-      {resolveForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="glass-card w-full max-w-lg p-6 rounded-xl border border-slate-800 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                <Database className="text-emerald-500" />
-                Resolve Incident & Save to RAG KB
-              </h3>
-              <button onClick={() => setShowResolveModal(null)} className="text-slate-400 hover:text-slate-200">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-slate-400">
-                Provide resolution comments for ticket <span className="font-mono text-blue-400 font-bold">{resolveForm}</span>. Resolving will automatically vectorize and index this incident in the historical knowledge base for future assignments.
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Resolution Notes</label>
-                <textarea
-                  rows="4"
-                  value={resolutionText}
-                  onChange={(e) => setResolutionText(e.target.value)}
-                  placeholder="Explain how this incident was fixed. Be descriptive (mention systems, errors, codes, portal paths) to allow accurate future RAG lookups."
-                  className="w-full bg-slate-900 border border-slate-850 rounded-lg py-2.5 px-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none placeholder-slate-600"
-                ></textarea>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-              <button
-                onClick={() => setShowResolveModal(null)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const incObj = incidents.find(i => i.number === resolveForm);
-                  handleResolve(resolveForm, incObj?.assigned_to);
-                }}
-                disabled={!resolutionText}
-                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
-                  resolutionText 
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer glow-border-green' 
-                    : 'bg-slate-850 text-slate-500 border border-slate-800 cursor-not-allowed'
-                }`}
-              >
-                Submit & Vectorize
               </button>
             </div>
           </div>
@@ -588,16 +508,13 @@ export default function Dashboard({ onUpdateMetrics }) {
       {isLoading && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md">
           <div className="relative flex items-center justify-center">
-            {/* Pulsing ring */}
             <div className="absolute w-24 h-24 rounded-full border border-blue-500 animate-ping opacity-25"></div>
-            {/* Spinning ring */}
             <div className="w-20 h-20 rounded-full border-t-2 border-r-2 border-blue-500 animate-spin"></div>
-            {/* Center icon */}
             <div className="absolute text-blue-500">
               <Cpu size={32} className="animate-pulse" />
             </div>
           </div>
-          <p className="mt-8 text-lg font-bold text-slate-100 glow-text-blue text-center">AI System In Progress</p>
+          <p className="mt-8 text-lg font-bold text-slate-100 text-center">AI System In Progress</p>
           <pre className="mt-4 text-xs text-slate-400 max-w-md text-center leading-relaxed font-mono whitespace-pre-line bg-slate-900 p-4 rounded-xl border border-slate-800">
             {loadingText}
           </pre>
