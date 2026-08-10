@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Play, RefreshCw, CheckCircle, XCircle, AlertTriangle, 
-  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Database, Award,
+  RefreshCw, CheckCircle, XCircle, AlertTriangle, 
+  UserCheck, ShieldAlert, Cpu, Check, X, ShieldCheck, Award,
   ChevronDown, ChevronUp, Clock
 } from 'lucide-react';
 import { 
-  getIncidents, simulateIncident, assignIncidents, 
-  approveAssignment, rejectAssignment, overrideAssignment, 
-  resolveIncident, getAssociates, getLogs
+  getIncidents, assignIncidents, 
+  approveAssignment, rejectAssignment, 
+  getAssociates, getLogs
 } from '../api';
 
 export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
@@ -17,13 +17,7 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('');
   const [activeRecommendation, setActiveRecommendation] = useState(null);
-  const [showOverrideModal, setShowOverrideModal] = useState(null); // ticket num
-  const [resolveForm, setShowResolveModal] = useState(null);        // ticket num
   const [expandedRow, setExpandedRow] = useState(null);             // expanded ticket number
-
-  // Form states
-  const [resolutionText, setResolutionText] = useState('');
-  const [selectedAssignee, setSelectedAssignee] = useState('');
 
   const loadData = async () => {
     try {
@@ -61,18 +55,7 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
     }
   };
 
-  const handleSimulate = async () => {
-    setIsLoading(true);
-    setLoadingText("ServiceNow API is pushing a new unassigned ticket...");
-    try {
-      await simulateIncident();
-      await loadData();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
 
   const handleAutoAssign = async () => {
     if (selectedIds.length === 0) return;
@@ -127,30 +110,7 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
     }
   };
 
-  const handleOverride = async (number) => {
-    if (!selectedAssignee) return;
-    try {
-      await overrideAssignment(number, selectedAssignee);
-      setShowOverrideModal(null);
-      setSelectedAssignee('');
-      setActiveRecommendation(null);
-      await loadData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
-  const handleResolve = async (number, resolvedBy) => {
-    if (!resolutionText) return;
-    try {
-      await resolveIncident(number, resolutionText, resolvedBy);
-      setShowResolveModal(null);
-      setResolutionText('');
-      await loadData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const getPriorityBadge = (prio) => {
     switch (prio) {
@@ -216,12 +176,12 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
   const unassignedIncidents = incidents.filter(i => i.status === 'Unassigned');
   const flaggedIncidents    = incidents.filter(i => i.status === 'Flagged');
   const assignedIncidents   = incidents.filter(i => i.status === 'Assigned');
-  const resolvedIncidents   = incidents.filter(i => i.status === 'Resolved');
+  // const resolvedIncidents   = incidents.filter(i => i.status === 'Resolved');
 
   return (
     <div className="space-y-6">
       {/* Header Cards Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="glass-card p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-slate-500 text-sm">Unassigned Incidents</p>
@@ -249,27 +209,11 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
             <UserCheck size={24} className="text-blue-500" />
           </div>
         </div>
-        <div className="glass-card p-4 rounded-xl flex items-center justify-between border-l-emerald-500 border-l-2">
-          <div>
-            <p className="text-slate-500 text-sm">Resolved Tickets</p>
-            <h3 className="text-3xl font-extrabold mt-1 text-emerald-600">{resolvedIncidents.length}</h3>
-          </div>
-          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
-            <CheckCircle size={24} className="text-emerald-500" />
-          </div>
-        </div>
       </div>
 
       {/* Action Buttons bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 glass-card rounded-xl">
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleSimulate}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition shadow-sm"
-          >
-            <Play size={16} className="text-emerald-500" />
-            Simulate ServiceNow Incident
-          </button>
           <button
             onClick={loadData}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition shadow-sm"
@@ -409,28 +353,6 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
                                   className="px-2.5 py-1 text-xs font-bold rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition border border-amber-200"
                                 >
                                   Review
-                                </button>
-                              )}
-                              {inc.status === 'Assigned' && (
-                                <button
-                                  onClick={() => {
-                                    setShowResolveModal(inc.number);
-                                    setResolutionText('');
-                                  }}
-                                  className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition border border-emerald-200"
-                                >
-                                  Resolve
-                                </button>
-                              )}
-                              {inc.status !== 'Resolved' && (
-                                <button
-                                  onClick={() => {
-                                    setShowOverrideModal(inc.number);
-                                    setSelectedAssignee('');
-                                  }}
-                                  className="px-2.5 py-1 text-xs font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
-                                >
-                                  Manual
                                 </button>
                               )}
                               {inc.status === 'Resolved' && (
@@ -576,133 +498,18 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
                     <X size={16} /> Reject (Escalate)
                   </button>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowOverrideModal(activeRecommendation.incident_number);
-                    setSelectedAssignee('');
-                  }}
-                  className="w-full py-2 text-sm font-bold rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 transition border border-slate-200 text-center"
-                >
-                  Manual Override Assignment
-                </button>
+
               </div>
             ) : (
               <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center space-y-3">
-                <Cpu size={36} className="text-slate-350" />
+                <Cpu size={36} className="text-slate-355" />
                 <p className="text-sm">Select unassigned tickets and click "Auto-Assign" or click "Review" on a flagged ticket to view AI justifications.</p>
               </div>
             )}
           </div>
         </div>
-
       </div>
 
-      {/* Manual Override Modal */}
-      {showOverrideModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md p-6 rounded-xl border border-slate-200 shadow-xl space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="text-lg font-bold text-slate-800">Manual Assignment Override</h3>
-              <button onClick={() => setShowOverrideModal(null)} className="text-slate-400 hover:text-slate-650">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-slate-500">
-                Directly route ticket <span className="font-mono text-blue-650 font-bold">{showOverrideModal}</span> to any team member.
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-555 uppercase tracking-wide mb-2">Select Associate</label>
-                <select
-                  value={selectedAssignee}
-                  onChange={(e) => setSelectedAssignee(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-3 text-sm text-slate-800 focus:border-blue-500 focus:outline-none"
-                >
-                  <option value="">-- Choose Associate --</option>
-                  {associates.map((assoc) => (
-                    <option key={assoc.name} value={assoc.name}>
-                      {assoc.name} ({assoc.domain} - {assoc.skill_level}) {assoc.is_on_shift ? '• ON SHIFT' : '(OFF)'} - Queue: {assoc.active_tickets}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-              <button
-                onClick={() => setShowOverrideModal(null)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-250 text-slate-700 border border-slate-200 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleOverride(showOverrideModal)}
-                disabled={!selectedAssignee}
-                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
-                  selectedAssignee 
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
-                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                }`}
-              >
-                Assign
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Resolve Incident Modal */}
-      {resolveForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-lg p-6 rounded-xl border border-slate-200 shadow-xl space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Database className="text-emerald-600" />
-                Resolve Incident & Index to RAG KB
-              </h3>
-              <button onClick={() => setShowResolveModal(null)} className="text-slate-400 hover:text-slate-650">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-slate-500">
-                Provide resolution comments for ticket <span className="font-mono text-blue-650 font-bold">{resolveForm}</span>. Resolving will automatically vectorize and index this incident in the historical knowledge base for future assignments.
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-555 uppercase tracking-wide mb-2">Resolution Notes</label>
-                <textarea
-                  rows="4"
-                  value={resolutionText}
-                  onChange={(e) => setResolutionText(e.target.value)}
-                  placeholder="Explain how this incident was fixed. Be descriptive (mention systems, errors, codes, portal paths) to allow accurate future RAG lookups."
-                  className="w-full bg-slate-55 border border-slate-200 rounded-lg py-2.5 px-3 text-sm text-slate-850 focus:border-blue-500 focus:outline-none placeholder-slate-400"
-                ></textarea>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-              <button
-                onClick={() => setShowResolveModal(null)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-250 text-slate-700 border border-slate-200 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const incObj = incidents.find(i => i.number === resolveForm);
-                  handleResolve(resolveForm, incObj?.assigned_to);
-                }}
-                disabled={!resolutionText}
-                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
-                  resolutionText 
-                    ? 'bg-emerald-600 hover:bg-emerald-505 text-white cursor-pointer shadow-sm' 
-                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                }`}
-              >
-                Submit & Vectorize
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Loading Overlay */}
       {isLoading && (

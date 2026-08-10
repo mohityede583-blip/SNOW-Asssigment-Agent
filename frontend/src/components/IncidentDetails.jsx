@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Cpu, ShieldCheck, ShieldAlert, AlertTriangle, UserCheck,
-  CheckCircle, Edit3, Database, Clock, X, Check, History, Info
+  Clock, X, Check, History, Info,Database
 } from 'lucide-react';
 import {
   getIncidentDetails, getSimilarIncidents, getAssociates,
-  assignIncidents, approveAssignment, rejectAssignment,
-  overrideAssignment, resolveIncident
+  assignIncidents, approveAssignment, rejectAssignment
 } from '../api';
 
 export default function IncidentDetails({ number, onClose, onUpdateMetrics }) {
@@ -17,10 +16,6 @@ export default function IncidentDetails({ number, onClose, onUpdateMetrics }) {
   const [error, setError] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loadingText, setLoadingText] = useState('');
-  const [showOverrideModal, setShowOverrideModal] = useState(false);
-  const [showResolveModal, setShowResolveModal] = useState(false);
-  const [selectedAssignee, setSelectedAssignee] = useState('');
-  const [resolutionText, setResolutionText] = useState('');
 
   const loadAll = useCallback(async () => {
     try {
@@ -104,33 +99,7 @@ export default function IncidentDetails({ number, onClose, onUpdateMetrics }) {
     }
   };
 
-  const handleOverride = async () => {
-    if (!selectedAssignee) return;
-    try {
-      await overrideAssignment(number, selectedAssignee);
-      setShowOverrideModal(false);
-      setSelectedAssignee('');
-      await loadAll();
-      onUpdateMetrics?.();
-    } catch (e) {
-      console.error(e);
-      alert('Failed to override assignment');
-    }
-  };
 
-  const handleResolve = async () => {
-    if (!resolutionText || !details) return;
-    try {
-      await resolveIncident(number, resolutionText, details.incident.assigned_to);
-      setShowResolveModal(false);
-      setResolutionText('');
-      await loadAll();
-      onUpdateMetrics?.();
-    } catch (e) {
-      console.error(e);
-      alert('Failed to resolve incident');
-    }
-  };
 
   const getPriorityBadge = (prio) => {
     switch (prio) {
@@ -266,26 +235,6 @@ export default function IncidentDetails({ number, onClose, onUpdateMetrics }) {
               className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition shadow-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200"
             >
               <Cpu size={14} /> Auto-Assign (AI)
-            </button>
-            <button
-              onClick={() => {
-                setShowOverrideModal(true);
-                setSelectedAssignee('');
-              }}
-              disabled={isProcessing || isClosed}
-              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition disabled:opacity-50"
-            >
-              <Edit3 size={14} /> Override Assignment
-            </button>
-            <button
-              onClick={() => {
-                setShowResolveModal(true);
-                setResolutionText('');
-              }}
-              disabled={isProcessing || isClosed || !incident.assigned_to}
-              className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200"
-            >
-              <CheckCircle size={14} /> Resolve Ticket
             </button>
           </div>
         </div>
@@ -491,32 +440,6 @@ export default function IncidentDetails({ number, onClose, onUpdateMetrics }) {
               </div>
             </div>
           </div>
-
-          {/* Rejection Logs */}
-          <div className="glass-card p-6 rounded-xl space-y-4">
-            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <X className="text-red-505" />
-              Incident Rejections
-            </h2>
-            <div className="space-y-3">
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Rejection Count</span>
-                <span className="font-bold text-slate-700">{incident.rejection_count || 0}</span>
-              </div>
-              {incident.rejected_associates && incident.rejected_associates.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Excluded Candidates</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {incident.rejected_associates.map((name) => (
-                      <span key={name} className="px-2 py-0.5 text-xs font-semibold rounded bg-red-50 text-red-705 border border-red-200">
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -623,110 +546,6 @@ export default function IncidentDetails({ number, onClose, onUpdateMetrics }) {
           </div>
         )}
       </div>
-
-      {/* MODAL: Manual Assignment Override */}
-      {showOverrideModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md p-6 rounded-xl border border-slate-250 shadow-xl space-y-6 animate-scale-in">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="text-lg font-bold text-slate-800">Manual Assignment Override</h3>
-              <button onClick={() => setShowOverrideModal(false)} className="text-slate-400 hover:text-slate-650 transition">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Manually dispatch ticket <span className="font-mono text-blue-655 font-bold">{number}</span>. This skips shift roster verification.
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Select Associate</label>
-                <select
-                  value={selectedAssignee}
-                  onChange={(e) => setSelectedAssignee(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-3 text-sm text-slate-800 focus:border-blue-500 focus:outline-none transition"
-                >
-                  <option value="">-- Choose Associate --</option>
-                  {associates.map((assoc) => (
-                    <option key={assoc.name} value={assoc.name}>
-                      {assoc.name} ({assoc.domain} - {assoc.skill_level}) {assoc.is_on_shift ? '• ON SHIFT' : '(OFF)'} - Queue: {assoc.active_tickets}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-              <button
-                onClick={() => setShowOverrideModal(false)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleOverride}
-                disabled={!selectedAssignee}
-                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
-                  selectedAssignee
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
-                    : 'bg-slate-100 text-slate-400 border border-slate-250 cursor-not-allowed'
-                }`}
-              >
-                Assign
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Resolve Incident */}
-      {showResolveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-lg p-6 rounded-xl border border-slate-250 shadow-xl space-y-6 animate-scale-in">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Database className="text-emerald-600" />
-                Resolve Incident &amp; Index to RAG KB
-              </h3>
-              <button onClick={() => setShowResolveModal(false)} className="text-slate-400 hover:text-slate-655 transition">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-slate-500 leading-relaxed">
-                Provide resolution comments for ticket <span className="font-mono text-blue-655 font-bold">{number}</span>. Resolving will automatically vectorize and index this incident in the historical knowledge base.
-              </p>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Resolution Notes</label>
-                <textarea
-                  rows="4"
-                  value={resolutionText}
-                  onChange={(e) => setResolutionText(e.target.value)}
-                  placeholder="Explain how this incident was fixed. Be descriptive (mention systems, errors, codes, portal paths) to allow accurate future RAG matches."
-                  className="w-full bg-slate-55 border border-slate-200 rounded-lg py-2.5 px-3 text-sm text-slate-850 focus:border-blue-500 focus:outline-none placeholder-slate-400 transition"
-                ></textarea>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-              <button
-                onClick={() => setShowResolveModal(false)}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResolve}
-                disabled={!resolutionText}
-                className={`px-4 py-2 text-sm font-bold rounded-lg transition ${
-                  resolutionText
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-sm'
-                    : 'bg-slate-100 text-slate-400 border border-slate-255 cursor-not-allowed'
-                }`}
-              >
-                Submit &amp; Vectorize
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* AI Processing overlay */}
       {isProcessing && (

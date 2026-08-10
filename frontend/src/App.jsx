@@ -6,10 +6,10 @@ import {
 import Dashboard from './components/Dashboard';
 import RosterView from './components/RosterView';
 import AssociateQueue from './components/AssociateQueue';
-import HistoryView from './components/HistoryView';
 import Metrics from './components/Metrics';
 import IncidentDetails from './components/IncidentDetails';
 import { getIncidents } from './api';
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -52,9 +52,9 @@ export default function App() {
     { id: 'dashboard', name: 'Queue Dashboard', icon: Cpu, badge: unassignedCount },
     { id: 'roster', name: 'Shift Roster', icon: Calendar },
     { id: 'queues', name: 'Associate Queues', icon: Users },
-    { id: 'rag', name: 'RAG Knowledge Base', icon: Database },
     { id: 'metrics', name: 'System Metrics', icon: BarChart },
   ];
+
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
@@ -141,9 +141,9 @@ export default function App() {
               {activeTab === 'dashboard' && <Dashboard onUpdateMetrics={checkUnassigned} onSelectIncident={(num) => setSelectedIncidentNumber(num)} />}
               {activeTab === 'roster' && <RosterView />}
               {activeTab === 'queues' && <AssociateQueue />}
-              {activeTab === 'rag' && <HistoryView />}
               {activeTab === 'metrics' && <Metrics />}
             </>
+
           )}
         </main>
       </div>
