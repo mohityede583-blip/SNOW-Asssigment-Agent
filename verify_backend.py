@@ -31,11 +31,10 @@ def run_tests():
         # July 5, 2026, 10:48 AM is a Sunday
         test_dt = datetime(2026, 7, 5, 10, 48, 0)
         
-        # Test John Doe or Alice Smith
-        # Alice Smith belongs to MFT domain
-        shift = roster_mgr.get_shift_for_date("Alice Smith", "MFT", test_dt)
-        is_active = roster_mgr.is_on_shift("Alice Smith", "MFT", test_dt)
-        print(f"Roster Lookup: Alice Smith (MFT) on July 5, 2026 @ 10:48 AM:")
+        # Alice Smith belongs to IT support domain (was MFT before rename)
+        shift = roster_mgr.get_shift_for_date("Alice Smith", "IT support", test_dt)
+        is_active = roster_mgr.is_on_shift("Alice Smith", "IT support", test_dt)
+        print(f"Roster Lookup: Alice Smith (IT support) on July 5, 2026 @ 10:48 AM:")
         print(f"  - Shift Acronym: {shift}")
         print(f"  - Actively On Shift: {is_active}")
         
@@ -79,7 +78,7 @@ def run_tests():
         # Create a test incident in SQLite
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         test_inc_num = "INC000TEST1"
         cursor.execute("DELETE FROM incidents WHERE number = ?", (test_inc_num,))
         cursor.execute("""
@@ -89,7 +88,7 @@ def run_tests():
             test_inc_num,
             "Azure virtual machine running at 99% CPU load",
             "Production VM web-app-prod-01 is alerting high CPU utilization for 15 minutes. Web traffic is sluggish.",
-            "Azure", "2", "2", "2026-07-06T18:48:00Z", "Unassigned", datetime.now().isoformat()
+            "Infrastructure", "2", "2", "2026-07-06T18:48:00Z", "Unassigned", datetime.now().isoformat()
         ))
         conn.commit()
         conn.close()

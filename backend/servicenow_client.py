@@ -1,5 +1,6 @@
 import json
 import random
+import sqlite3
 import uuid
 from datetime import datetime, timedelta
 import httpx
@@ -11,49 +12,49 @@ INCIDENT_TEMPLATES = [
     {
         "short_description": "Azure VM scale set fails to scale down",
         "description": "The VM scale set for our staging environment is pinned at 5 instances despite CPU utilization being under 10%. Diagnostic logs show autoscaling engine fails to communicate.",
-        "category": "Azure",
+        "category": "Infrastructure",
         "priority": "3",
         "urgency": "2"
     },
     {
         "short_description": "Oracle database locks on payment transaction table",
         "description": "High volumes of concurrent checkout requests are causing row-exclusive locks on checkout_payment table. Blocked processes count is rising.",
-        "category": "Database",
+        "category": "Developers",
         "priority": "1",
         "urgency": "1"
     },
     {
         "short_description": "MFT transfer failed - source directory file lock issue",
         "description": "The daily invoice extraction job failed with file lock error on source folder /data/invoices/tmp. File is locked by another process.",
-        "category": "MFT",
+        "category": "IT support",
         "priority": "4",
         "urgency": "3"
     },
     {
         "short_description": "ESB JMS queue exceeding threshold of 1000 messages",
         "description": "JMS destination queue queue.orders.inbound is currently holding 1450 messages. Consumer processes are running but processing speed is sluggish.",
-        "category": "ESB",
+        "category": "Admin",
         "priority": "2",
         "urgency": "2"
     },
     {
         "short_description": "Informatica ETL session failed during bulk load",
         "description": "ETL job load_daily_facts failed in Session s_load_sales. Error code: 36401. Session failed because the target DB was temporarily unavailable.",
-        "category": "ETL",
+        "category": "HR",
         "priority": "3",
         "urgency": "2"
     },
     {
         "short_description": "Azure Blob storage read operations timing out",
         "description": "Applications trying to download media assets from container assets-prod are receiving 504 gateway timeout errors. Network latency is normal.",
-        "category": "Azure",
+        "category": "Infrastructure",
         "priority": "2",
         "urgency": "1"
     },
     {
         "short_description": "SQL Server replication sync agent failed",
         "description": "The merge replication agent for transactional sync has shut down. Error: The process could not retrieve database metadata. Replication is out of sync by 4 hours.",
-        "category": "Database",
+        "category": "Developers",
         "priority": "2",
         "urgency": "2"
     },
@@ -74,7 +75,7 @@ INCIDENT_TEMPLATES = [
     {
         "short_description": "Slow response on ESB service catalog api",
         "description": "The inventory catalog lookup API hosted on the ESB cluster is responding in 4.5 seconds (SLA threshold is 500ms). Web team reporting timeouts.",
-        "category": "ESB",
+        "category": "Admin",
         "priority": "3",
         "urgency": "2"
     }
@@ -158,7 +159,7 @@ class ServiceNowClient:
                 headers = {"Accept": "application/json"}
                 query_url = f"{self.url}/api/now/table/incident"
                 params = {
-                    "sysparm_limit": 10,
+                    "sysparm_limit": 20,
                     "sysparm_display_value": "true",
                 }
                 with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=10.0) as client:
@@ -166,7 +167,7 @@ class ServiceNowClient:
                     # print("RESPONSE JSON:\n",resp)
                     if resp.status_code == 200:
                         results = resp.json().get("result", [])
-                        print("GET SNOW INCIDENT CALL:\n",json.dumps(results,indent=4))
+                        # print("GET SNOW INCIDENT CALL:\n",json.dumps(results,indent=4))
 
                         # Map ServiceNow API output fields to our local schema format.
                         # The DB now stores the full SNOW payload, so the mapper
@@ -317,6 +318,110 @@ class ServiceNowClient:
 
             # Mock mode: no upstream payload to freeze
             "raw_payload":           None,
+        }
+
+    def fetch_users_from_api(self) -> list:
+        """
+        Fetch all active users from ServiceNow.
+
+        Calls:
+            GET /api/now/table/sys_user?sysparm_query=active=true
+
+        Returns a list of dicts shaped to the columns of the local
+        `associates` table. Only SNOW-owned columns are populated here;
+        local-only columns (domain, skill_level, active_tickets) are
+        left for the sync routine to fill or NULL out.
+
+        Returns an empty list in mock mode or on any network/auth failure.
+        """
+        if self.mock_mode:
+            return []
+
+        try:
+            query_url = f"{self.url}/api/now/table/sys_user"
+            params = {
+                # Pull only active accounts; we shouldn't assign work to
+                # inactive or locked-out users.
+                "sysparm_query": "active=true",
+                "sysparm_limit": 18,
+                "sysparm_display_value": "true",
+            }
+            print("fetching user...")
+
+            headers = {"Accept": "application/json"}
+            with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=60.0) as client:
+                resp = client.get(query_url, params=params)
+                print("status code:",resp.status_code)
+                # print(resp.json())
+                if resp.status_code != 200:
+                    print(f"SNOW /sys_user returned status {resp.status_code}; skipping user sync.")
+                    return []
+                results = resp.json().get("result", [])
+                print(f"Fetched {len(results)} active user(s) from ServiceNow.")
+
+                return [self._map_snow_user(u) for u in results]
+        except Exception as e:
+            print(f"Failed to fetch users from ServiceNow: {e}")
+            return []
+
+    def _map_snow_user(self, u: dict) -> dict:
+        """
+        Translate a single ServiceNow `sys_user` row into the column shape
+        of our local `associates` table. SNOW reference fields are
+        normalized to plain sys_id strings (the local schema stores them
+        as TEXT, not the incidents-style JSON refs).
+
+        local-only fields (domain, skill_level, active_tickets) are NOT
+        set here; the caller decides whether to populate them.
+        """
+        def ref_id(field):
+            """
+            Pull the sys_id out of a SNOW reference that may be either a
+            plain string (display_value=true) or a {value, display_value,
+            link} dict. Returns None when no sys_id is available.
+            """
+            if field is None:
+                return None
+            if isinstance(field, dict):
+                return field.get("value")
+            return None
+
+        return {
+            # Identity
+            "sys_id":         u.get("sys_id"),
+            "user_name":      u.get("user_name"),
+            "first_name":     u.get("first_name"),
+            "middle_name":    u.get("middle_name"),
+            "last_name":      u.get("last_name"),
+            "name":           display_value(u.get("name")) or u.get("user_name"),
+
+            # Contact
+            "email":          u.get("email"),
+            "phone":          u.get("phone"),
+            "mobile_phone":   u.get("mobile_phone"),
+            "title":          u.get("title"),
+
+            # Org / HR
+            "employee_number": u.get("employee_number"),
+            "department":     ref_id(u.get("department")),
+            "company":        ref_id(u.get("company")),
+            "manager":        ref_id(u.get("manager")),
+            "location":       ref_id(u.get("location")),
+            "building":       ref_id(u.get("building")),
+            "cost_center":    ref_id(u.get("cost_center")),
+            "time_zone":      u.get("time_zone"),
+
+            # Flags (SNOW booleans -> SQLite INTEGER 0/1)
+            "active":         1 if str(u.get("active")).lower() in ("true", "1", "yes") else 0,
+            "locked_out":     1 if str(u.get("locked_out")).lower() in ("true", "1", "yes") else 0,
+            "vip":            1 if str(u.get("vip")).lower() in ("true", "1", "yes") else 0,
+
+            # Misc
+            "roles":          u.get("roles"),
+            "source":         "snow",
+            "last_login_time":u.get("last_login_time"),
+            "failed_attempts":int(u.get("failed_attempts") or 0),
+            "photo":          u.get("photo"),
         }
 
     def pull_new_incidents(self) -> list:
@@ -475,3 +580,98 @@ class ServiceNowClient:
         return added_tickets
 
 servicenow_client = ServiceNowClient()
+
+
+def sync_associates_from_servicenow() -> int:
+    """
+    Pull all active users from ServiceNow and upsert them into the local
+    `associates` table.
+
+    Behavior:
+      - In mock mode (no SERVICENOW_URL configured): no-op, returns 0.
+      - On network/auth error: no-op, returns 0; the app falls back to the
+        Excel-based roster seed.
+      - On success: upserts one row per user using
+        ON CONFLICT(sys_id) DO UPDATE. SNOW-owned columns are refreshed;
+        the local-only `active_tickets` counter is left alone so an
+        in-flight workload survives a reseed.
+
+    Returns the number of users upserted.
+    """
+    if servicenow_client.mock_mode:
+        return 0
+
+    users = servicenow_client.fetch_users_from_api()
+    if not users:
+        return 0
+
+    # The column list MUST stay aligned with the `associates` CREATE TABLE
+    # in backend/database.py:init_db(). Missing local-only fields
+    # (domain, skill_level, active_tickets) are NOT in the SET clause so
+    # they stay untouched on re-sync.
+    upsert_sql = """
+    INSERT INTO associates (
+        sys_id, user_name, first_name, middle_name, last_name, name,
+        email, phone, mobile_phone, title,
+        employee_number, department, company, manager,
+        location, building, cost_center, time_zone,
+        active, locked_out, vip,
+        roles, source, last_login_time, failed_attempts, photo
+    ) VALUES (
+        :sys_id, :user_name, :first_name, :middle_name, :last_name, :name,
+        :email, :phone, :mobile_phone, :title,
+        :employee_number, :department, :company, :manager,
+        :location, :building, :cost_center, :time_zone,
+        :active, :locked_out, :vip,
+        :roles, :source, :last_login_time, :failed_attempts, :photo
+    )
+    ON CONFLICT(sys_id) DO UPDATE SET
+        user_name      = excluded.user_name,
+        first_name     = excluded.first_name,
+        middle_name    = excluded.middle_name,
+        last_name      = excluded.last_name,
+        name           = excluded.name,
+        email          = excluded.email,
+        phone          = excluded.phone,
+        mobile_phone   = excluded.mobile_phone,
+        title          = excluded.title,
+        employee_number= excluded.employee_number,
+        department     = excluded.department,
+        company        = excluded.company,
+        manager        = excluded.manager,
+        location       = excluded.location,
+        building       = excluded.building,
+        cost_center    = excluded.cost_center,
+        time_zone      = excluded.time_zone,
+        active         = excluded.active,
+        locked_out     = excluded.locked_out,
+        vip            = excluded.vip,
+        roles          = excluded.roles,
+        source         = excluded.source,
+        last_login_time= excluded.last_login_time,
+        failed_attempts= excluded.failed_attempts,
+        photo          = excluded.photo
+        -- domain, skill_level, active_tickets are intentionally
+        -- NOT touched: they are app-owned state.
+    """
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    upserted = 0
+    for user in users:
+        # Skip rows without a sys_id — they're unusable as keys.
+        if not user.get("sys_id"):
+            continue
+        try:
+            cursor.execute(upsert_sql, user)
+            upserted += 1
+        except sqlite3.IntegrityError as e:
+            # Likely a `name` UNIQUE collision (two SNOW users with the
+            # same display name). Log and continue so one bad row doesn't
+            # abort the whole sync.
+            print(f"Skipping user {user.get('sys_id')} ({user.get('name')!r}): {e}")
+    conn.commit()
+    conn.close()
+
+    print(f"Synced {upserted} ServiceNow user(s) into associates table.")
+    return upserted

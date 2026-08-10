@@ -1,4 +1,5 @@
 import sqlite3
+import hashlib
 import pandas as pd
 from backend.config import settings
 
@@ -13,14 +14,72 @@ def init_db():
     cursor = conn.cursor()
     
     # 1. Create Associates Table
+    #
+    # Schema mirrors ServiceNow `sys_user` (User [sys_user]) plus three local-only
+    # fields (domain, skill_level, active_tickets) used by the assignment engine.
+    # The SNOW-specific columns (email, phone, manager, department, etc.) stay NULL
+    # while associates are seeded from `shift_roster.xlsx`; a future SNOW sync will
+    # populate them.
+    #
+    # Migration strategy: drop & recreate on startup. We detect the legacy 4-column
+    # layout (no `sys_id`) via PRAGMA and DROP only when needed, so a fresh DB does
+    # not see a redundant DROP. Existing local data loss is intentional and accepted.
+    cursor.execute("PRAGMA table_info(associates)")
+    _existing_cols = [row[1] for row in cursor.fetchall()]
+    if _existing_cols and "sys_id" not in _existing_cols:
+        print("Legacy associates layout detected — dropping and recreating to mirror sys_user.")
+        cursor.execute("DROP TABLE associates")
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS associates (
-        name TEXT PRIMARY KEY,
-        domain TEXT,
-        skill_level TEXT,
-        active_tickets INTEGER DEFAULT 0
+        -- SNOW identity columns
+        sys_id            TEXT PRIMARY KEY,
+        user_name         TEXT,
+        first_name        TEXT,
+        middle_name       TEXT,
+        last_name         TEXT,
+        name              TEXT NOT NULL UNIQUE,  -- display name; UI key
+
+        -- SNOW contact
+        email             TEXT,
+        phone             TEXT,
+        mobile_phone      TEXT,
+        title             TEXT,
+
+        -- SNOW org / HR
+        employee_number   TEXT,
+        department        TEXT,  -- cmn_department sys_id
+        company           TEXT,  -- core_company sys_id
+        manager           TEXT,  -- self-ref to sys_user.sys_id
+        location          TEXT,
+        building          TEXT,
+        cost_center       TEXT,
+        time_zone         TEXT,
+
+        -- SNOW flags (SQLite booleans = INTEGER 0/1)
+        active            INTEGER NOT NULL DEFAULT 0,
+        locked_out        INTEGER NOT NULL DEFAULT 0,
+        vip               INTEGER NOT NULL DEFAULT 0,
+
+        -- SNOW misc
+        roles             TEXT,           -- comma-separated role names
+        source            TEXT,           -- ldap / okta / roster / snow_sync
+        last_login_time   TEXT,           -- ISO datetime
+        failed_attempts   INTEGER NOT NULL DEFAULT 0,
+        photo             TEXT,
+
+        -- Local-only fields used by the assignment engine
+        domain            TEXT,
+        skill_level       TEXT,
+        active_tickets    INTEGER NOT NULL DEFAULT 0
     )
     """)
+
+    # `name` UNIQUE creates its own index; add a domain index because the engine
+    # filters `WHERE domain = ?` on every assignment call.
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_associates_domain ON associates(domain)"
+    )
     
     # 2. Create Incidents Table
     # The original 13 columns are preserved so the assignment engine, the
@@ -124,6 +183,10 @@ def init_db():
 # -------------------------------------------------------------------
 # Schema migration helpers (called from init_db)
 # -------------------------------------------------------------------
+# Note: the `associates` table intentionally uses DROP + CREATE in
+# init_db() rather than the ALTER-based pattern below. See the comment
+# at the top of the associates CREATE TABLE for the rationale.
+#
 # The list of columns the v2 schema adds on top of the original 13.
 # Each entry is (name, sqlite_type). New columns must be added here so
 # existing databases pick them up on the next startup. The CREATE TABLE
@@ -212,30 +275,74 @@ def _backfill_incidents_columns(cursor):
     # assignment_group_ref has no legacy counterpart, so old rows keep
     # NULL there until a future ServiceNow refresh populates it.
 
+def _seed_sys_id(name: str) -> str:
+    """
+    Deterministic 32-char hex sys_id derived from the Excel display name.
+    Re-running the seed yields the same id, so the ON CONFLICT upsert is
+    idempotent. The 'roster:' prefix prevents accidental collisions with
+    real ServiceNow sys_ids (which are unprefixed 32-hex).
+    """
+    return hashlib.sha1(f"roster:{name}".encode("utf-8")).hexdigest()[:32]
+
+
+def _parse_name(full_name: str) -> tuple[str | None, str | None]:
+    """
+    Best-effort split of a single full name into (first_name, last_name).
+    Returns (None, None) if the name is empty or unparseable.
+    """
+    if not isinstance(full_name, str) or not full_name.strip():
+        return None, None
+    parts = full_name.strip().split()
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], parts[-1]
+
+
 def sync_associates_from_roster():
     print("Syncing associates from shift roster Excel...")
     try:
         # Load Associate_Skills sheet from shift_roster.xlsx
         xls_path = settings.ROSTER_FILE_PATH
         df = pd.read_excel(xls_path, sheet_name="Associate_Skills")
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         for _, row in df.iterrows():
-            name = row["Associate Name"]
+            name = str(row["Associate Name"]).strip()
             domain = row["Technology Domain"]
             skill_level = row["Skill Level"]
-            
-            # Insert or update
-            cursor.execute("""
-            INSERT INTO associates (name, domain, skill_level, active_tickets)
-            VALUES (?, ?, ?, 0)
-            ON CONFLICT(name) DO UPDATE SET
-                domain=excluded.domain,
-                skill_level=excluded.skill_level
-            """, (name, domain, skill_level))
-            
+
+            sys_id = _seed_sys_id(name)
+            first_name, last_name = _parse_name(name)
+
+            # Insert or update. We do NOT touch `active_tickets` here so an
+            # in-flight workload counter survives a reseed. Each per-row write
+            # is isolated so a duplicate display name (UNIQUE collision on
+            # `name`) logs a warning instead of aborting the whole seed.
+            try:
+                cursor.execute("""
+                INSERT INTO associates (
+                    sys_id, user_name, first_name, last_name, name,
+                    domain, skill_level, active_tickets,
+                    active, locked_out, vip, failed_attempts, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'roster')
+                ON CONFLICT(sys_id) DO UPDATE SET
+                    name           = excluded.name,
+                    user_name      = excluded.user_name,
+                    first_name     = excluded.first_name,
+                    last_name      = excluded.last_name,
+                    domain         = excluded.domain,
+                    skill_level    = excluded.skill_level,
+                    source         = excluded.source
+                """, (
+                    sys_id, name, first_name, last_name, name,
+                    domain, skill_level,
+                ))
+            except sqlite3.IntegrityError as e:
+                # Most likely cause: duplicate `name` in the Excel sheet.
+                print(f"Skipping duplicate associate row for name={name!r}: {e}")
+
         conn.commit()
         conn.close()
         print("Associates synced successfully.")

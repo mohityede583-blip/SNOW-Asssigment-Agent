@@ -51,7 +51,7 @@ export default function RosterView() {
   const today = new Date();
   const currentDay = today.getDate();
   const currentMonthYear = today.toLocaleString('default', { month: 'long', year: 'numeric' });
-  const teams = ['ALL', 'MFT', 'ESB', 'Azure', 'Database', 'ETL', 'L1 Support'];
+  const teams = ['ALL', 'IT support', 'Infrastructure', 'Admin', 'Developers', 'HR', 'L1 Support'];
   
   const filteredRoster = filterTeam === 'ALL'
     ? rosterData.roster

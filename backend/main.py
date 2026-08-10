@@ -14,7 +14,7 @@ load_dotenv()
 
 from backend.config import settings
 from backend.database import get_db_connection, init_db, get_seed_resolved_incidents
-from backend.servicenow_client import servicenow_client
+from backend.servicenow_client import servicenow_client, sync_associates_from_servicenow
 from backend.assignment_engine import assignment_engine
 from backend.rag_engine import rag_engine
 from backend.snow_refs import ref_display
@@ -41,8 +41,13 @@ async def startup_event():
     init_db()
     # Bootstrap the RAG knowledge base in ChromaDB with the historical seed list
     rag_engine.seed_historical_incidents(get_seed_resolved_incidents())
+    # One-shot fetch of all active ServiceNow users into the associates table.
+    # No-op in mock mode; on any error the Excel-based roster seed keeps the
+    # app usable. Runs synchronously so a slow SNOW instance doesn't race with
+    # the first HTTP request.
+    sync_associates_from_servicenow()
     # Start the periodic background fetch task
-    # asyncio.create_task(periodic_snow_pull())
+    asyncio.create_task(periodic_snow_pull())
 
 # Background task to periodically pull incidents (simulate ServiceNow webhook/polling)
 async def periodic_snow_pull():
@@ -55,7 +60,7 @@ async def periodic_snow_pull():
         except Exception as e:
             print(f"Error in periodic ServiceNow sync: {e}")
         # Wait 45 seconds between sync checks
-        await asyncio.sleep(45)
+        await asyncio.sleep(60)
 
 # Pydantic Schemas
 class AssignRequest(BaseModel):

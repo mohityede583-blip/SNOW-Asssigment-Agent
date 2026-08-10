@@ -26,11 +26,15 @@ class AssignmentEngine:
         """
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Mapping categories to tech domains in the Excel sheets
-        # MFT, ESB, Azure, Database, ETL
+
+        # Valid tech domains — must match the `Technology Domain` values in
+        # shift_roster.xlsx → Associate_Skills sheet. If the category coming
+        # in from a SNOW incident is not one of these, we fall back to
+        # L1 Support. Used to be MFT/ESB/Azure/Database/ETL; renamed to
+        # IT support/Infrastructure/Admin/Developers/HR.
+        _TECH_DOMAINS = ("IT support", "Infrastructure", "Admin", "Developers", "HR")
         domain = category
-        if category not in ["MFT", "ESB", "Azure", "Database", "ETL"]:
+        if category not in _TECH_DOMAINS:
             domain = "L1 Support"
             
         cursor.execute("SELECT name, domain, skill_level, active_tickets FROM associates WHERE domain = ?", (domain,))
