@@ -35,12 +35,11 @@ class RosterManager:
             
             # Find the row for the associate
             assoc_row = df[df["Associate Name"] == associate_name]
+        
             if assoc_row.empty:
-                return "OFF"
-                
-            day_str = str(dt.day)
-            if day_str in assoc_row.columns:
-                return str(assoc_row.iloc[0][day_str])
+                return "OFF"            
+            if dt.day in assoc_row.columns:
+                return str(assoc_row.iloc[0][dt.day])
         except Exception as e:
             print(f"Error reading shift for {associate_name} on {dt.date()}: {e}")
             

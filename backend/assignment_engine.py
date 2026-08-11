@@ -9,6 +9,11 @@ from backend.roster_manager import RosterManager
 from backend.rag_engine import rag_engine
 
 class AssignmentEngine:
+    # Points awarded per listed skill that appears in the incident text.
+    # Tunable. At 10 points per match, an associate with 3 matching skills
+    # gets +30 points — comparable to the L3-vs-Priority-2 bonus (35 pts).
+    SKILL_MATCH_BONUS = 10.0
+
     def __init__(self):
         self.roster_mgr = RosterManager()
         # ChatOllama goes through LangChain, so every .invoke() is auto-traced
@@ -18,6 +23,26 @@ class AssignmentEngine:
             model=settings.OLLAMA_TEXT_MODEL,
             temperature=0.1,
         )
+
+    @staticmethod
+    def _count_skill_matches(skills_csv: str | None, incident_text: str) -> int:
+        """
+        Count how many of the candidate's listed skills appear (as a
+        case-insensitive substring) in the incident text. Returns 0 when
+        the candidate has no skills recorded (e.g. SNOW-synced rows).
+        """
+        if not skills_csv or not incident_text:
+            return 0
+        haystack = incident_text.lower()
+        hits = 0
+        for raw in skills_csv.split(","):
+            skill = raw.strip().lower()
+            # Skip tokens that are too short to be meaningful substrings.
+            if len(skill) < 3:
+                continue
+            if skill in haystack:
+                hits += 1
+        return hits
 
     def get_candidate_associates(self, category: str, dt: datetime, rejected_list: list) -> tuple[list, str]:
         """
@@ -37,7 +62,7 @@ class AssignmentEngine:
         if category not in _TECH_DOMAINS:
             domain = "L1 Support"
             
-        cursor.execute("SELECT name, domain, skill_level, active_tickets FROM associates WHERE domain = ?", (domain,))
+        cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates WHERE domain = ?", (domain,))
         candidates = [dict(r) for r in cursor.fetchall()]
         
         # Filter by shift availability
@@ -51,7 +76,7 @@ class AssignmentEngine:
         # Fallback to L1 Support if no team members are active in the target domain
         if not available and domain != "L1 Support":
             print(f"No active associates in domain {domain}. Escalating to L1 Support Team...")
-            cursor.execute("SELECT name, domain, skill_level, active_tickets FROM associates WHERE domain = 'L1 Support'")
+            cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates WHERE domain = 'L1 Support'")
             l1_candidates = [dict(r) for r in cursor.fetchall()]
             on_shift_l1 = self.roster_mgr.get_active_associates(l1_candidates, dt)
             available = [c for c in on_shift_l1 if c["name"] not in rejected_list]
@@ -59,7 +84,7 @@ class AssignmentEngine:
             
         # Hard fallback: if still no one is on shift anywhere, find any on-shift associate as a safety valve
         if not available:
-            cursor.execute("SELECT name, domain, skill_level, active_tickets FROM associates")
+            cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates")
             all_candidates = [dict(r) for r in cursor.fetchall()]
             on_shift_any = self.roster_mgr.get_active_associates(all_candidates, dt)
             available = [c for c in on_shift_any if c["name"] not in rejected_list]
@@ -68,7 +93,7 @@ class AssignmentEngine:
         # Super hard fallback: if NO ONE is on shift, return all associates in the matching domain (on or off shift)
         if not available:
             print("No associates on shift at all. Returning off-shift candidates as fallback...")
-            cursor.execute("SELECT name, domain, skill_level, active_tickets FROM associates WHERE domain = ?", (domain,))
+            cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates WHERE domain = ?", (domain,))
             available = [dict(r) for r in cursor.fetchall() if r["name"] not in rejected_list]
             route_status = f"Assigned to off-shift associate in {domain} (No active roster coverage)"
             
@@ -128,7 +153,22 @@ class AssignmentEngine:
             if rag_count > 0:
                 score += rag_bonus
                 reasons.append(f"RAG History: Solved {rag_count} similar incident(s) in past (+{round(rag_bonus, 1)} pts)")
-                
+
+            # 4. Skill match — count how many of the candidate's listed skills
+            # appear in the incident's short_description + description.
+            # Each match is worth SKILL_MATCH_BONUS points. SNOW-synced rows
+            # have skills=NULL so this step is a no-op for them.
+            skill_hits = self._count_skill_matches(
+                cand.get("skills"),
+                f"{incident.get('short_description', '')} {incident.get('description', '') or ''}",
+            )
+            if skill_hits > 0:
+                skill_bonus = skill_hits * self.SKILL_MATCH_BONUS
+                score += skill_bonus
+                reasons.append(
+                    f"Skill match: {skill_hits} listed skill(s) appear in incident (+{round(skill_bonus, 1)} pts)"
+                )
+
             cand_scored = cand.copy()
             cand_scored["heuristic_score"] = round(score, 1)
             cand_scored["score_breakdown"] = reasons
@@ -146,7 +186,6 @@ class AssignmentEngine:
         """
         conn = get_db_connection()
         cursor = conn.cursor()
-        print('api key',settings.LANGSMITH_ENDPOINT)
         # 1. Fetch incident
         cursor.execute("SELECT * FROM incidents WHERE number = ?", (incident_number,))
         inc_row = cursor.fetchone()
@@ -169,20 +208,16 @@ class AssignmentEngine:
         # 3. Find candidates on shift
         now = datetime.now()
         candidates, route_status = self.get_candidate_associates(incident["category"], now, rejected_list)
-        
         if not candidates:
             conn.close()
             return {"status": "error", "message": "No candidates available for assignment."}
             
         # 4. Score candidates
         scored_candidates = self.calculate_heuristic_scores(incident, candidates, rag_matches)
-        
         # 5. Build prompt for Ollama
         prompt = self.build_ollama_prompt(incident, scored_candidates, rag_matches, route_status)
-        
         # 6. Call Ollama
         recommendation = self.call_ollama_llm(prompt, scored_candidates[0]["name"])
-        
         # 7. Update Database
         conf_score = recommendation["confidence_score"]
         rec_associate = recommendation["recommended_associate"]
@@ -248,7 +283,6 @@ class AssignmentEngine:
         for c in candidates:
             candidates_str += f"- Name: {c['name']}, Domain: {c['domain']}, Skill Level: {c['skill_level']}, Active Tickets: {c['active_tickets']}, Heuristic Score: {c['heuristic_score']}\n"
             candidates_str += f"  Factors: {', '.join(c['score_breakdown'])}\n"
-        print("BUILD OLLAMA CALLED")
         rag_str = ""
         if rag_matches:
             for i, m in enumerate(rag_matches):
@@ -299,7 +333,6 @@ You MUST respond with a single JSON object. Do not include markdown wraps (like 
         as a single LLM run in LangSmith. Falls back to the top heuristic
         candidate if Ollama is unreachable or returns unparseable JSON.
         """
-        print("CALL OLLAMA CALLED")
         try:
             response = self.llm.invoke(
                 [

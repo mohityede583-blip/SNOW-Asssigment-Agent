@@ -258,11 +258,6 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
                   </th>
                   <th className="py-3 px-4">Ticket</th>
                   <th className="py-3 px-4">Details</th>
-                  <th className="py-3 px-4">Priority / Domain</th>
-                  <th className="py-3 px-4">SLA</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Assignee</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150 text-sm">
@@ -273,7 +268,7 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
                     </td>
                   </tr>
                 ) : (
-                  incidents.map((inc) => {
+                  incidents.filter(i => i.status === 'Unassigned').map((inc) => {
                     const isExpanded = expandedRow === inc.number;
                     return (
                       <React.Fragment key={inc.number}>
@@ -313,53 +308,6 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
                             <p className="font-semibold text-slate-800 truncate">{inc.short_description}</p>
                             <p className="text-xs text-slate-500 truncate mt-0.5">{inc.description}</p>
                           </td>
-                          <td className="py-4 px-4 space-y-1">
-                            <div>{getPriorityBadge(inc.priority)}</div>
-                            <div className="text-xs text-slate-500">Team: <span className="font-semibold text-slate-700">{inc.category}</span></div>
-                          </td>
-                          <td className="py-4 px-4">{getSLABadge(inc.sla_due || inc.sla_limit)}</td>
-                          <td className="py-4 px-4">{getStatusBadge(inc.status)}</td>
-                          <td className="py-4 px-4 font-medium text-slate-700">
-                            {inc.assigned_to ? (
-                              <span className="text-blue-600 font-semibold">{inc.assigned_to}</span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                            {inc.rejection_count > 0 && (
-                              <div className="text-[10px] text-red-600 font-semibold">Rejected x{inc.rejection_count}</div>
-                            )}
-                          </td>
-                          <td className="py-4 px-4 text-right" onClick={e => e.stopPropagation()}>
-                            <div className="flex justify-end gap-2">
-                              {inc.status === 'Flagged' && (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const logs = await getLogs(inc.number);
-                                      if (logs.length > 0) {
-                                        const cands = logs[0].evaluated_associates || [];
-                                        setActiveRecommendation({
-                                          incident_number: inc.number,
-                                          recommended_associate: logs[0].recommended_associate,
-                                          confidence_score: logs[0].confidence_score,
-                                          justification: logs[0].justification,
-                                          candidates: cands
-                                        });
-                                      }
-                                    } catch (e) {
-                                      console.error(e);
-                                    }
-                                  }}
-                                  className="px-2.5 py-1 text-xs font-bold rounded bg-amber-50 text-amber-700 hover:bg-amber-100 transition border border-amber-200"
-                                >
-                                  Review
-                                </button>
-                              )}
-                              {inc.status === 'Resolved' && (
-                                <span className="text-xs text-slate-400 italic">Resolved</span>
-                              )}
-                            </div>
-                          </td>
                         </tr>
 
                         {/* ── Expanded detail row ── */}
@@ -394,12 +342,6 @@ export default function Dashboard({ onUpdateMetrics, onSelectIncident }) {
                                   <div className="space-y-0.5">
                                     <p className="font-bold text-slate-500 uppercase tracking-wide">Subcategory</p>
                                     <p className="text-slate-700">{inc.subcategory}</p>
-                                  </div>
-                                )}
-                                {inc.sys_id && (
-                                  <div className="space-y-0.5">
-                                    <p className="font-bold text-slate-500 uppercase tracking-wide">Sys ID</p>
-                                    <p className="font-mono text-slate-600 text-[10px]">{inc.sys_id}</p>
                                   </div>
                                 )}
                                 {inc.incident_state && (

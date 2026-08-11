@@ -349,7 +349,7 @@ class ServiceNowClient:
             print("fetching user...")
 
             headers = {"Accept": "application/json"}
-            with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=60.0) as client:
+            with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=15.0) as client:
                 resp = client.get(query_url, params=params)
                 print("status code:",resp.status_code)
                 # print(resp.json())
@@ -616,14 +616,16 @@ def sync_associates_from_servicenow() -> int:
         employee_number, department, company, manager,
         location, building, cost_center, time_zone,
         active, locked_out, vip,
-        roles, source, last_login_time, failed_attempts, photo
+        roles, source, last_login_time, failed_attempts, photo,
+        skills
     ) VALUES (
         :sys_id, :user_name, :first_name, :middle_name, :last_name, :name,
         :email, :phone, :mobile_phone, :title,
         :employee_number, :department, :company, :manager,
         :location, :building, :cost_center, :time_zone,
         :active, :locked_out, :vip,
-        :roles, :source, :last_login_time, :failed_attempts, :photo
+        :roles, :source, :last_login_time, :failed_attempts, :photo,
+        NULL
     )
     ON CONFLICT(sys_id) DO UPDATE SET
         user_name      = excluded.user_name,
@@ -651,6 +653,8 @@ def sync_associates_from_servicenow() -> int:
         last_login_time= excluded.last_login_time,
         failed_attempts= excluded.failed_attempts,
         photo          = excluded.photo
+        -- skills is intentionally NOT touched on SNOW re-sync:
+        -- leaves any local skill data intact.
         -- domain, skill_level, active_tickets are intentionally
         -- NOT touched: they are app-owned state.
     """

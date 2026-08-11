@@ -71,7 +71,8 @@ def init_db():
         -- Local-only fields used by the assignment engine
         domain            TEXT,
         skill_level       TEXT,
-        active_tickets    INTEGER NOT NULL DEFAULT 0
+        active_tickets    INTEGER NOT NULL DEFAULT 0,
+        skills            TEXT                 -- comma-separated; from the Excel sheet
     )
     """)
 
@@ -80,6 +81,10 @@ def init_db():
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_associates_domain ON associates(domain)"
     )
+
+    # Idempotent column-add for tables that already have the SNOW-aligned
+    # layout. Mirrors the _migrate_incidents_columns pattern.
+    _migrate_associates_columns(cursor)
     
     # 2. Create Incidents Table
     # The original 13 columns are preserved so the assignment engine, the
@@ -239,6 +244,25 @@ def _migrate_incidents_columns(cursor):
             )
 
 
+# Idempotent column-add for the `associates` table. The CREATE TABLE in
+# init_db() lists the final column set, so a fresh DB gets every column in
+# one shot. For an existing DB that already has the SNOW-aligned layout
+# (from the previous schema migration), these ADD COLUMNs bring it up to
+# date without the drop-and-recreate that would lose data.
+_ASSOCIATE_NEW_COLUMNS = [
+    ("skills", "TEXT"),
+]
+
+
+def _migrate_associates_columns(cursor):
+    """Add any column from _ASSOCIATE_NEW_COLUMNS that isn't already on `associates`."""
+    for col_name, col_type in _ASSOCIATE_NEW_COLUMNS:
+        if not _column_exists(cursor, "associates", col_name):
+            cursor.execute(
+                f"ALTER TABLE associates ADD COLUMN {col_name} {col_type}"
+            )
+
+
 def _backfill_incidents_columns(cursor):
     """
     Populate the new columns from the legacy ones where possible so the
@@ -312,6 +336,7 @@ def sync_associates_from_roster():
             name = str(row["Associate Name"]).strip()
             domain = row["Technology Domain"]
             skill_level = row["Skill Level"]
+            skills = row.get("Skills") if "Skills" in df.columns else None
 
             sys_id = _seed_sys_id(name)
             first_name, last_name = _parse_name(name)
@@ -325,8 +350,9 @@ def sync_associates_from_roster():
                 INSERT INTO associates (
                     sys_id, user_name, first_name, last_name, name,
                     domain, skill_level, active_tickets,
-                    active, locked_out, vip, failed_attempts, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'roster')
+                    active, locked_out, vip, failed_attempts, source,
+                    skills
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'roster', ?)
                 ON CONFLICT(sys_id) DO UPDATE SET
                     name           = excluded.name,
                     user_name      = excluded.user_name,
@@ -334,10 +360,11 @@ def sync_associates_from_roster():
                     last_name      = excluded.last_name,
                     domain         = excluded.domain,
                     skill_level    = excluded.skill_level,
-                    source         = excluded.source
+                    source         = excluded.source,
+                    skills         = excluded.skills
                 """, (
                     sys_id, name, first_name, last_name, name,
-                    domain, skill_level,
+                    domain, skill_level, skills,
                 ))
             except sqlite3.IntegrityError as e:
                 # Most likely cause: duplicate `name` in the Excel sheet.
@@ -357,63 +384,63 @@ def get_seed_resolved_incidents() -> list:
     """
     return [
         {
-            "number": "INC0001001",
-            "short_description": "Azure VM disk space critically low",
-            "resolution": "Extended the OS drive capacity in the Azure portal and expanded the volume using Disk Management utility.",
-            "resolved_by": "Ivy Martin"  # Azure L3
+            "number": "INC0000036",
+            "short_description": "Experiencing connection issues. Unable to create connection to data source.",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "Naomi Greenly"
         },
         {
-            "number": "INC0001002",
-            "short_description": "Azure Web App returning 503 service unavailable",
-            "resolution": "Restarted the app service slot and increased instance count from 1 to 2 in Azure Scale Out settings.",
-            "resolved_by": "Henry Anderson"  # Azure L2
+            "number": "INC0000035",
+            "short_description": "Forgot password and unable to log in. Can you reset or resend my password?",
+            "resolution": "Helped user to reset password",
+            "resolved_by": "Jacinto Gawron"
         },
         {
-            "number": "INC0001003",
-            "short_description": "MFT transfer failed for file upload to client SFTP",
-            "resolution": "SFTP password had expired. Updated the credentials in MFT partner profile and triggered reprocessing.",
-            "resolved_by": "Charlie Brown"  # MFT L3
+            "number": "INC0000601",
+            "short_description": "I'm facing network issue. My Infrasture in not able to connect with company network",
+            "resolution": "As this is intermittent. Restarting the PC fixes this.",
+            "resolved_by": "Jess Assad"
         },
         {
-            "number": "INC0001004",
-            "short_description": "ESB Message Broker queue blocked on processing payload",
-            "resolution": "Cleared the poisoned message queue, routed message to dead letter queue, and restarted the listener service.",
-            "resolved_by": "Frank Thomas"  # ESB L3
+            "number": "INC0000021",
+            "short_description": "We have a new hire starting on Monday. She will need to be set up with a desk, laptop, phone, email account, and systems access.",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "survey user"
         },
         {
-            "number": "INC0001005",
-            "short_description": "Oracle Database connection timeout from application server",
-            "resolution": "Db listeners were saturated. Increased PROCESSES and SESSIONS configuration parameters in init.ora and flushed connection pool.",
-            "resolved_by": "Liam Clark"  # Database L3
+            "number": "INC0000024",
+            "short_description": "The landing page for our internal wiki isn't loading. I've refreshed it multiple times and it keeps timing out.",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "Jewel Agresta"
         },
         {
-            "number": "INC0001006",
-            "short_description": "SQL Server deadlock encountered in inventory transaction",
-            "resolution": "Identified blocking transaction. Refactored query to use WITH (NOLOCK) hint and optimized table indexes.",
-            "resolved_by": "Kelly Harris"  # Database L2
+            "number": "INC0000004",
+            "short_description": "User forgot their email password.",
+            "resolution": "Walked him through settng his password, again.",
+            "resolved_by": "Jewel Agresta"
         },
         {
-            "number": "INC0001007",
-            "short_description": "ETL job failing due to string truncation error in stage table",
-            "resolution": "Source system altered schema length. Increased column size of dest_customer_address in target table to VARCHAR(250).",
-            "resolved_by": "Olivia Hall"  # ETL L3
+            "number": "INC0000001",
+            "short_description": "User can't access email on mail.company.com.\n\t\t",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "Melinda Carleton"
         },
         {
-            "number": "INC0001008",
-            "short_description": "Azure Key Vault secret retrieval access denied",
-            "resolution": "Added app registrations service principal to Access Policies in Key Vault with Secret Get permission.",
-            "resolved_by": "Grace Taylor"  # Azure L1
+            "number": "INC0000010",
+            "short_description": "Currently running 10GR1 and need to upgrade to 10GR2.",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "Krystle Stika"
         },
         {
-            "number": "INC0001009",
-            "short_description": "ESB flow failed due to parsing exception on invalid XML structure",
-            "resolution": "Validated payload schema. Communicated with source system to escape special character ampersand '&' and re-received payload.",
-            "resolved_by": "Emma Wilson"  # ESB L2
+            "number": "INC0000026",
+            "short_description": "Hard drive has been making a loud grinding noise for the last two days.",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "Tom Diggins-Barnes"
         },
         {
-            "number": "INC0001010",
-            "short_description": "ETL workflow running extremely slow on daily delta load",
-            "resolution": "Rebuilt indexes on delta log table and updated statistics. Performance restored back to normal (12 min from 3 hrs).",
-            "resolved_by": "Noah Walker"  # ETL L2
+            "number": "INC0000028",
+            "short_description": "Hard drive is still making grinding and clicking noises and now I can't delete a file. I've tried to delete it 3 times.",
+            "resolution": "Closed before close notes were made mandatory",
+            "resolved_by": "Tom Diggins-Barnes"
         }
     ]
