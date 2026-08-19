@@ -2,7 +2,7 @@ import json
 import random
 import sqlite3
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 import httpx
 from backend.config import settings
 from backend.database import get_db_connection
@@ -158,8 +158,13 @@ class ServiceNowClient:
                 # Real API call
                 headers = {"Accept": "application/json"}
                 query_url = f"{self.url}/api/now/table/incident"
+                five_mins_ago = datetime.now(timezone.utc) - timedelta(minutes=2)
+                current_time=datetime.now(timezone.utc)
+                formatted_time_five = five_mins_ago.strftime("%Y-%m-%d %H:%M:%S")
+                formatted_time_current = current_time.strftime("%Y-%m-%d %H:%M:%S")
                 params = {
                     "sysparm_limit": 20,
+                    "sysparm_query": f"opened_at>={formatted_time_five}^opened_at<={formatted_time_current}",
                     "sysparm_display_value": "true",
                 }
                 with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=10.0) as client:

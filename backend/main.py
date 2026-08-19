@@ -59,7 +59,7 @@ async def periodic_snow_pull():
                 print(f"Ingested {len(new_incidents)} new unassigned incident(s).")
         except Exception as e:
             print(f"Error in periodic ServiceNow sync: {e}")
-        # Wait 45 seconds between sync checks
+        # Wait 60 seconds between sync checks
         await asyncio.sleep(60)
 
 # Pydantic Schemas
