@@ -47,7 +47,7 @@ async def startup_event():
     # the first HTTP request.
     # sync_associates_from_servicenow()
     # Start the periodic background fetch task
-    asyncio.create_task(periodic_snow_pull())
+    # asyncio.create_task(periodic_snow_pull())
 
 # Background task to periodically pull incidents (simulate ServiceNow webhook/polling)
 async def periodic_snow_pull():
@@ -82,6 +82,46 @@ class ResolveRequest(BaseModel):
     incident_number: str
     resolution: str
     resolved_by: str
+
+class PushIncidentRequest(BaseModel):
+    number: str
+    short_description: str
+    description: Optional[str] = None
+    category: Optional[str] = "L1 Support"
+    priority: Optional[str] = "3"
+    urgency: Optional[str] = "3"
+    sla_limit: Optional[str] = None
+    status: Optional[str] = "Unassigned"
+    assigned_to: Optional[str] = None
+    assigned_at: Optional[str] = None
+    created_at: Optional[str] = None
+    rejection_count: Optional[int] = 0
+    rejected_associates: Optional[str] = "[]"
+    sys_id: Optional[str] = None
+    sys_class_name: Optional[str] = "incident"
+    sys_mod_count: Optional[int] = 0
+    sys_updated_on: Optional[str] = None
+    sys_updated_by: Optional[str] = "manual_push"
+    incident_state: Optional[str] = "1"
+    impact: Optional[str] = "3"
+    severity: Optional[str] = "3"
+    subcategory: Optional[str] = None
+    close_code: Optional[str] = None
+    close_notes: Optional[str] = None
+    made_sla: Optional[str] = None
+    hold_reason: Optional[str] = None
+    reassignment_count: Optional[int] = 0
+    reopen_count: Optional[int] = 0
+    opened_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    closed_at: Optional[str] = None
+    sla_due: Optional[str] = None
+    activity_due: Optional[str] = None
+    opened_by_ref: Optional[str] = None
+    caller_id_ref: Optional[str] = None
+    assignment_group_ref: Optional[str] = None
+    assigned_to_ref: Optional[str] = None
+    raw_payload: Optional[str] = None
 
 class WorkloadRequest(BaseModel):
     name: str
@@ -187,9 +227,51 @@ def get_similar_incidents(number: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def background_assignment(inc_num:str):
+    print(f"running in background for {inc_num}")
+
+@app.post("/api/incidents/push")
+def push_incident(request: PushIncidentRequest,backgroud_task:BackgroundTasks):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Use INSERT OR REPLACE to avoid PK conflict on 'number'
+        cursor.execute("""
+        INSERT OR REPLACE INTO incidents (
+            number, short_description, description, category, priority, urgency,
+            sla_limit, status, assigned_to, assigned_at, created_at,
+            rejection_count, rejected_associates,
+            sys_id, sys_class_name, sys_mod_count, sys_updated_on, sys_updated_by,
+            incident_state, impact, severity, subcategory, close_code, close_notes,
+            made_sla, hold_reason, reassignment_count, reopen_count,
+            opened_at, resolved_at, closed_at, sla_due, activity_due,
+            opened_by_ref, caller_id_ref, assignment_group_ref, assigned_to_ref,
+            raw_payload
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            request.number, request.short_description, request.description, request.category, request.priority, request.urgency,
+            request.sla_limit, request.status, request.assigned_to, request.assigned_at, request.created_at,
+            request.rejection_count, request.rejected_associates,
+            request.sys_id, request.sys_class_name, request.sys_mod_count, request.sys_updated_on, request.sys_updated_by,
+            request.incident_state, request.impact, request.severity, request.subcategory, request.close_code, request.close_notes,
+            request.made_sla, request.hold_reason, request.reassignment_count, request.reopen_count,
+            request.opened_at, request.resolved_at, request.closed_at, request.sla_due, request.activity_due,
+            request.opened_by_ref, request.caller_id_ref, request.assignment_group_ref, request.assigned_to_ref,
+            request.raw_payload
+        ))
+        conn.commit()
+        backgroud_task.add_task(background_assignment,request.number)   
+        return {"status": "success", "message": f"Incident {request.number} pushed successfully."}
+    except Exception as e:
+        conn.rollback()
+        print(e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 @app.post("/api/incidents/assign")
+
 def assign_incidents(request: AssignRequest):
     results = []
     for inc_num in request.incident_numbers:

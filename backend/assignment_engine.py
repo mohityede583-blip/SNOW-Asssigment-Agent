@@ -44,59 +44,33 @@ class AssignmentEngine:
                 hits += 1
         return hits
 
-    def get_candidate_associates(self, category: str, dt: datetime, rejected_list: list) -> tuple[list, str]:
+    def get_candidate_associates(self, dt: datetime, rejected_list: list) -> tuple[list, str]:
         """
-        Retrieves associates matching the tech team, who are currently on shift.
-        If no associates are available, falls back to the L1 Support team.
+        Retrieves associates who are currently on shift.
+        If no associates are available on shift, falls back to all associates.
         """
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Valid tech domains — must match the `Technology Domain` values in
-        # shift_roster.xlsx → Associate_Skills sheet. If the category coming
-        # in from a SNOW incident is not one of these, we fall back to
-        # L1 Support. Used to be MFT/ESB/Azure/Database/ETL; renamed to
-        # IT support/Infrastructure/Admin/Developers/HR.
-        _TECH_DOMAINS = ("IT support", "Infrastructure", "Admin", "Developers", "HR")
-        domain = category
-        if category not in _TECH_DOMAINS:
-            domain = "L1 Support"
-            
-        cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates WHERE domain = ?", (domain,))
+        # Fetch all associates regardless of domain to ensure a broader candidate pool.
+        # Specialization is handled by the scoring heuristic, not by initial filtering.
+        cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates")
         candidates = [dict(r) for r in cursor.fetchall()]
-        
+
         # Filter by shift availability
         on_shift = self.roster_mgr.get_active_associates(candidates, dt)
-        
+
         # Exclude already rejected associates
         available = [c for c in on_shift if c["name"] not in rejected_list]
-        
-        route_status = f"Matched to tech domain: {domain}"
-        
-        # Fallback to L1 Support if no team members are active in the target domain
-        if not available and domain != "L1 Support":
-            print(f"No active associates in domain {domain}. Escalating to L1 Support Team...")
-            cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates WHERE domain = 'L1 Support'")
-            l1_candidates = [dict(r) for r in cursor.fetchall()]
-            on_shift_l1 = self.roster_mgr.get_active_associates(l1_candidates, dt)
-            available = [c for c in on_shift_l1 if c["name"] not in rejected_list]
-            route_status = "Escalated to L1 Support (Domain members unavailable)"
-            
-        # Hard fallback: if still no one is on shift anywhere, find any on-shift associate as a safety valve
-        if not available:
-            cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates")
-            all_candidates = [dict(r) for r in cursor.fetchall()]
-            on_shift_any = self.roster_mgr.get_active_associates(all_candidates, dt)
-            available = [c for c in on_shift_any if c["name"] not in rejected_list]
-            route_status = "Escalated to Any On-Shift Associate (No team/L1 members active)"
-            
-        # Super hard fallback: if NO ONE is on shift, return all associates in the matching domain (on or off shift)
+
+        route_status = "Considering all on-shift associates"
+
+        # Super hard fallback: if NO ONE is on shift, return all associates as fallback
         if not available:
             print("No associates on shift at all. Returning off-shift candidates as fallback...")
-            cursor.execute("SELECT name, domain, skill_level, active_tickets, skills FROM associates WHERE domain = ?", (domain,))
-            available = [dict(r) for r in cursor.fetchall() if r["name"] not in rejected_list]
-            route_status = f"Assigned to off-shift associate in {domain} (No active roster coverage)"
-            
+            available = [c for c in candidates if c["name"] not in rejected_list]
+            route_status = "Assigned to off-shift associate (No active roster coverage)"
+
         conn.close()
         return available, route_status
 
@@ -207,7 +181,7 @@ class AssignmentEngine:
         
         # 3. Find candidates on shift
         now = datetime.now()
-        candidates, route_status = self.get_candidate_associates(incident["category"], now, rejected_list)
+        candidates, route_status = self.get_candidate_associates(now, rejected_list)
         if not candidates:
             conn.close()
             return {"status": "error", "message": "No candidates available for assignment."}
