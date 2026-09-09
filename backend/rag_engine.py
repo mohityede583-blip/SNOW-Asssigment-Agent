@@ -3,7 +3,7 @@ from chromadb.config import Settings as ChromaSettings
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.documents import Document
-
+from langsmith import traceable
 from backend.config import settings
 
 
@@ -100,8 +100,6 @@ class RAGEngine:
             )
         self.vectorstore.add_documents(documents)
         print("Historical incidents seeded into ChromaDB successfully.")
-
-    # ---------- read paths ----------
 
     def search_similar_incidents(
         self, incident_description: str, top_k: int = 2

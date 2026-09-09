@@ -44,6 +44,7 @@ class AssignmentEngine:
                 hits += 1
         return hits
 
+    @traceable(name="get_candidate_associates",run_type="tool")
     def get_candidate_associates(self, dt: datetime, rejected_list: list) -> tuple[list, str]:
         """
         Retrieves associates who are currently on shift.
@@ -73,7 +74,7 @@ class AssignmentEngine:
 
         conn.close()
         return available, route_status
-
+    @traceable(name="calculate_score",run_type="tool")
     def calculate_heuristic_scores(self, incident: dict, candidates: list, rag_matches: list) -> list:
         """
         Calculates a compatibility score for each candidate associate.
@@ -174,7 +175,13 @@ class AssignmentEngine:
         rejected_list = json.loads(incident["rejected_associates"] or "[]")
         
         # 2. Search RAG for similar resolved tickets
-        rag_matches = rag_engine.search_similar_incidents(
+        traced_similar_inc = traceable(
+            rag_engine.search_similar_incidents,
+            name="search_similar_incidents",
+            run_type='retriever'
+        )
+        
+        rag_matches = traced_similar_inc(
             f"{incident['short_description']} {incident['description']}", 
             top_k=2
         )
@@ -202,6 +209,8 @@ class AssignmentEngine:
         if conf_score < settings.CONFIDENCE_THRESHOLD:
             new_status = "Flagged"
             
+            # assign to L1 team
+            
         # Save audit log
         cursor.execute("""
         INSERT INTO assignment_logs (
@@ -222,6 +231,7 @@ class AssignmentEngine:
         # If approved automatically, set assigned_to. Else keep empty for human review.
         assigned_to = rec_associate if new_status == "Assigned" else None
         assigned_at = datetime.utcnow().isoformat() if new_status == "Assigned" else None
+
         
         cursor.execute("""
         UPDATE incidents 
@@ -251,7 +261,7 @@ class AssignmentEngine:
             "candidates": scored_candidates
         }
 
-    @traceable(name="build_ollama_prompt", run_type="chain")
+    @traceable(name="build_ollama_prompt", run_type="prompt")
     def build_ollama_prompt(self, incident: dict, candidates: list, rag_matches: list, route_status: str) -> str:
         candidates_str = ""
         for c in candidates:
