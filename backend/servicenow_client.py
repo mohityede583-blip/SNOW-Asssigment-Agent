@@ -584,6 +584,38 @@ class ServiceNowClient:
 
         return added_tickets
 
+    def assign_incident_in_snow(self, incident_sys_id: str, associate_sys_id: str, justification: str) -> bool:
+        """
+        Assigns an incident to an associate in ServiceNow and adds the AI's
+        justification as a work note.
+        """
+        if self.mock_mode:
+            print(f"[MOCK] SNOW API: Assigning incident {incident_sys_id} to associate {associate_sys_id}")
+            print(f"[MOCK] SNOW API: Adding work note: {justification}")
+            return True
+
+        try:
+            # SNOW Table API PATCH: /api/now/table/incident/{sys_id}
+            # Updating assigned_to and adding to work_notes (which appends in SNOW)
+            url = f"{self.url}/api/now/table/incident/{incident_sys_id}"
+            payload = {
+                "assigned_to": associate_sys_id,
+                "work_notes": justification
+            }
+            headers = {"Content-Type": "application/json", "Accept": "application/json"}
+
+            with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=10.0) as client:
+                resp = client.patch(url, json=payload)
+                if resp.status_code == 200:
+                    print(f"Successfully assigned incident {incident_sys_id} in ServiceNow.")
+                    return True
+                else:
+                    print(f"Failed to assign incident in SNOW. Status: {resp.status_code}, Response: {resp.text}")
+                    return False
+        except Exception as e:
+            print(f"Error calling SNOW assignment API: {e}")
+            return False
+
 servicenow_client = ServiceNowClient()
 
 

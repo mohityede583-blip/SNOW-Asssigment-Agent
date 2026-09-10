@@ -229,6 +229,49 @@ def get_similar_incidents(number: str):
 
 def background_assignment(inc_num:str):
     print(f"running in background for {inc_num}")
+    try:
+        res = assignment_engine.execute_assignment(inc_num)
+        print("response assignemnt agetn:",res)
+
+        # If the assignment was successful and an associate was recommended,
+        # push the assignment back to ServiceNow.
+        if res.get("status") == "success":
+            rec_assoc_name = res.get("recommended_associate")
+            justification = res.get("justification")
+
+            if rec_assoc_name:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+
+                # 1. Resolve Incident Number to sys_id
+                cursor.execute("SELECT sys_id FROM incidents WHERE number = ?", (inc_num,))
+                inc_row = cursor.fetchone()
+
+                # 2. Resolve Associate Name to sys_id
+                # cursor.execute("SELECT sys_id FROM associates WHERE name = ?", (rec_assoc_name,))
+                # assoc_row = cursor.fetchone()
+
+                if inc_row:
+                    inc_sys_id = inc_row["sys_id"]
+                    assoc_sys_id = rec_assoc_name #assoc_row["sys_id"]
+
+                    print(f"Pushing assignment to SNOW: Incident {inc_sys_id} -> Associate {assoc_sys_id}")
+                    success = servicenow_client.assign_incident_in_snow(
+                        incident_sys_id=inc_sys_id,
+                        associate_sys_id=assoc_sys_id,
+                        justification=justification
+                    )
+                    if success:
+                        print("Successfully updated assignment in ServiceNow.")
+                    else:
+                        print("Failed to update assignment in ServiceNow.")
+                else:
+                    print(f"Could not resolve sys_ids for incident {inc_num} or associate {rec_assoc_name}")
+
+                conn.close()
+    except Exception as e:
+        print('ERROR IN BACKGROUND ASSIGNEMTN',e)
+
 
 @app.post("/api/incidents/push")
 def push_incident(request: PushIncidentRequest,backgroud_task:BackgroundTasks):

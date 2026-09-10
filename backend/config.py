@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # App General Settings
     APP_NAME: str = "ServiceNow AI Incident Assigner"
-    PORT: int = 8000
+    PORT: int = 8001
 
     # Database Settings
     DATABASE_URL: str = "sqlite:///./incident_assignment.db"
