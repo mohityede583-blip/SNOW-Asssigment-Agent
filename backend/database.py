@@ -383,6 +383,126 @@ def get_seed_resolved_incidents() -> list:
     and written into ChromaDB.
     """
     return [
+            {
+                "number": "INC0012948",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Critical BusinessWorks JVM Heap Exhaustion and Engine Stoppage During Peak XML Payload Processing",
+                "resolution": "Restarted the BW engine instance and increased JVM max heap allocation (-Xmx) from 2GB to 4GB in TRA config. Verified stable processing via monitoring tools."
+            },
+            {
+                "number": "INC0012949",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Scheduled SFTP File Transfer Job Interruption Due to Network and Authentication Protocol Timeouts",
+                "resolution": "Re-established SSH keys, verified firewall port 22 connectivity, and manually re-triggered the file transfer task to completion."
+            },
+            {
+                "number": "INC0012950",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Database Staging Pipeline Failure Caused by Exclusive Row-Level Locks and Concurrent Batch Deadlocks",
+                "resolution": "Cleared active database sessions holding exclusive locks, adjusted commit intervals within the mapping, and successfully restarted the workflow."
+            },
+            {
+                "number": "INC0012951",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Cloud Workflow Service Integration Failure Due to Expired OAuth 2.0 Security Credentials and Invalid Token",
+                "resolution": "Rotated and updated the Client Secret in the vault, re-authorized the service connection resource, and reprocessed dead-lettered messages."
+            },
+            {
+                "number": "INC0012952",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Enterprise Gateway HTTP 504 Gateway Timeout Due to Downstream Microservice Connection Pool Exhaustion",
+                "resolution": "Scaled Kubernetes pod replicas from 3 to 6 for the downstream microservice and added an index on the SQL query to eliminate high latency."
+            },
+            {
+                "number": "INC0012953",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Kafka Consumer Group Lag Spike and Partition Rebalance Storm Due to Slow Database Write Latency",
+                "resolution": "Optimized consumer batch commit frequency, tuned the max.poll.interval.ms configuration parameter, and manually reset the consumer offsets after database performance stabilized."
+            },
+            {
+                "number": "INC0012954",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Enterprise Service Bus JMS Destination Full Exception Caused by Unacknowledged Subscriber Backpressure",
+                "resolution": "Purged orphaned consumer sessions, temporarily increased the broker destination memory quota, and coordinated with the subscriber application team to restart their processing daemon."
+            },
+            {
+                "number": "INC0012955",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Managed File Transfer Cryptographic Decryption Failure Due to Expired PGP Private Key Ring",
+                "resolution": "Imported the updated PGP private key ring into the keyring store, verified key fingerprints, and successfully re-executed the batch decryption and ingestion script."
+            },
+            {
+                "number": "INC0012956",
+                "resolved_by": "Melinda Carleton",
+                "short_description": "Distributed Data Warehouse Incremental Ingestion Failure Caused by Schema Drift and Type Mismatch",
+                "resolution": "Altered the target data warehouse table column definition to match the expanded upstream length, refreshed the source metadata definition, and resumed the pipeline execution."
+            },
+            {
+                "number": "INC0012957",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "Cloud Serverless Function Timeout Exception During Heavy Payload JSON Transformation Execution",
+                "resolution": "Refactored the JavaScript transformation code to utilize iterative parsing logic, implemented stream-based data chunking, and increased the function execution timeout threshold to 600 seconds."
+            },
+            {
+                "number": "INC0012958",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "RESTful Gateway Rate Limit Threshold Exceeded Error Causing Mass Client Rejections with HTTP 429",
+                "resolution": "Temporarily increased the client IP rate-limiting threshold in the gateway policy manager, and coordinated with the partner engineering team to implement exponential backoff retry logic."
+            },
+            {
+                "number": "INC0012959",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "Enterprise Service Bus SSL/TLS Handshake Failure Due to Untrusted Self-Signed Certificate Authority Chain",
+                "resolution": "Imported the new vendor intermediate and root SSL certificates into the Java truststore (cacerts), restarted the ESB runtime container, and validated successful TLS negotiation."
+            },
+            {
+                "number": "INC0012960",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "Enterprise Service Bus File Poller Resource Leak Causing File System Handle Exhaustion and Lockup",
+                "resolution": "Patched the custom Java service to enforce strict try-with-resources block closures, increased the OS file descriptor limit (nofile), and restarted the integration engine service."
+            },
+            {
+                "number": "INC0012961",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "Batch Data Synchronization Job Failure Caused by Foreign Key Constraint Violation on Target Table",
+                "resolution": "Implemented dependency sequencing within the orchestration job to ensure dimension tables process completely before fact tables, and reprocessed the failed batch subset."
+            },
+            {
+                "number": "INC0012962",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "Cloud Storage Bucket Event Notification Trigger Failure Caused by Missing IAM Permissions Policy",
+                "resolution": "Restored the necessary granular IAM permissions to the automation service account policy document, uploaded a test payload, and verified successful workflow execution."
+            },
+            {
+                "number": "INC0012963",
+                "resolved_by": "Jewel Agresta",
+                "short_description": "Distributed Transaction Coordinator Rollback Due to Network Partition Between Microservices",
+                "resolution": "Verified cluster network stability, inspected compensation transaction logs, manually cleared orphaned pending locks in the database, and re-initiated the workflow for affected user sessions."
+            },
+            {
+                "number": "INC0012964",
+                "resolved_by": "Jess Assad",
+                "short_description": "Managed File Transfer Cluster Node Split-Brain Condition Causing Duplicate Job Execution",
+                "resolution": "Restarted the cluster coordination daemon on the secondary node, forced a re-election of the active cluster master node, and cleaned up duplicate partial lock files from the shared storage mount."
+            },
+            {
+                "number": "INC0012965",
+                "resolved_by": "Jess Assad",
+                "short_description": "Enterprise Service Bus Transform Mapping Exception Caused by Unescaped Special Characters in Input XML",
+                "resolution": "Updated the integration service mapping to include an automated character sanitization pre-step using regular expression filtering to strip invalid control sequences before transformation."
+            },
+            {
+                "number": "INC0012966",
+                "resolved_by": "Jess Assad",
+                "short_description": "Cloud API Management Service OAuth Token Introspection Latency Spike Causing Gateway Bottlenecks",
+                "resolution": "Enabled local token validation caching with a 5-minute TTL on the gateway proxy nodes to bypass redundant introspection calls, instantly reducing token verification latency."
+            },
+            {
+                "number": "INC0012967",
+                "short_description": "Bulk Data Extraction Job Failure Caused by Out-of-Disk Space Condition on Database Temp Segment. Nightly database extraction workflow failed abruptly with an ORA-1652: unable to extend temp segment error. Massive parallel sorting operations generated by an unindexed multi-table join query completely filled the allocated temporary tablespace partition on the database server.",
+                "resolution": "Expanded the database temporary tablespace file allocation, optimized the SQL join query execution plan by adding proper composite indexes, and restarted the extraction script.",
+                 "resolved_by": "Naomi Greenly"
+            },
         {
             "number": "INC0000036",
             "short_description": "Experiencing connection issues. Unable to create connection to data source.",

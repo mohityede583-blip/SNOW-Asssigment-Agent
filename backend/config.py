@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     OLLAMA_TEXT_MODEL: str = "qwen3:1.7b"  # Fast local model
     OLLAMA_EMBED_MODEL: str = "qwen3-embedding:4b"  # Native embedding model
 
+    GOOGLE_LLM: str = "gemini-3-flash-preview"
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
+
     # LangSmith Settings (read from .env / process env automatically by pydantic-settings)
     LANGSMITH_TRACING: str = "True"
     LANGSMITH_ENDPOINT: str = ""
@@ -77,6 +80,6 @@ _export_to_env(
         "LANGSMITH_TRACING",
         "LANGSMITH_ENDPOINT",
         "LANGSMITH_API_KEY",
-        "LANGSMITH_PROJECT",
+        "LANGSMITH_PROJECT"
     ],
 )

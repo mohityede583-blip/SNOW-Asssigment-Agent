@@ -7,6 +7,8 @@ from backend.config import settings
 from backend.database import get_db_connection
 from backend.roster_manager import RosterManager
 from backend.rag_engine import rag_engine
+from langchain_google_genai import ChatGoogleGenerativeAI
+from backend.servicenow_client import servicenow_client
 
 class AssignmentEngine:
     # Points awarded per listed skill that appears in the incident text.
@@ -22,6 +24,12 @@ class AssignmentEngine:
             base_url=settings.OLLAMA_BASE_URL,
             model=settings.OLLAMA_TEXT_MODEL,
             temperature=0.1,
+        )
+
+        self.google = ChatGoogleGenerativeAI(
+            model=settings.GOOGLE_LLM,
+            api_key=settings.GOOGLE_API_KEY,
+            temperature=0.1
         )
 
     @staticmethod
@@ -170,6 +178,8 @@ class AssignmentEngine:
             return {"status": "error", "message": "Incident not found"}
             
         incident = dict(inc_row)
+
+        # print("incident:",json.dumps(incident))
         
         # Parse rejected list
         rejected_list = json.loads(incident["rejected_associates"] or "[]")
@@ -208,8 +218,7 @@ class AssignmentEngine:
         new_status = "Assigned"
         if conf_score < settings.CONFIDENCE_THRESHOLD:
             new_status = "Flagged"
-            
-            # assign to L1 team
+            servicenow_client.update_work_notes(incident["sys_id"],"ASSIGNMENT: Assign it to available engineer.")
             
         # Save audit log
         cursor.execute("""
@@ -297,15 +306,14 @@ CANDIDATES CURRENTLY ON SHIFT:
 DECISION RULES:
 1. Prioritize associates who resolved highly similar tickets in the past (RAG History).
 2. Balance workloads: avoid assigning to associates with high number of active tickets if someone else is available.
-3. Skill level match: High priority (1 or 2) tickets require L3 or L2 associates. Junior (L1) associates should receive L4 or L3 priority tickets.
-4. Output a Confidence Score (0-100%). If the candidates are a poor match, or workload is high, reduce the score. If a candidate is a perfect match (L3, on shift, has resolved this exact issue in past, has low workload), confidence should be 85%+.
+3. Output a Confidence Score (0-100%). If the candidates are a poor match, or workload is high, reduce the score. If a candidate is a perfect match (L3, on shift, has resolved this exact issue in past, has low workload), confidence should be 85%+.
 
 RESPONSE FORMAT:
 You MUST respond with a single JSON object. Do not include markdown wraps (like ```json), headers, or explanations. Use this schema:
 {{
   "recommended_associate": "Full Name of Selected Associate",
   "confidence_score": 85,
-  "justification": "Detailed explanation mentioning their skill level, shift availability, RAG history, and workload."
+  "justification": "Detailed explanation mentioning their shift availability, RAG history, and workload in bullet points"
 }}
 """
         return prompt

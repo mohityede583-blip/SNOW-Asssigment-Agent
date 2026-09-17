@@ -584,6 +584,30 @@ class ServiceNowClient:
 
         return added_tickets
 
+    def update_work_notes(self, sys_id: str, work_notes: str) -> bool:
+        """
+        Update work_notes on an existing incident via ServiceNow Table API.
+        PATCH /api/now/table/incident/{sys_id}
+        """
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            patch_url = f"{self.url}/api/now/table/incident/{sys_id}"
+            payload = {"work_notes": work_notes}
+            with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=10.0) as client:
+                resp = client.patch(patch_url, json=payload)
+                if resp.status_code == 200:
+                    print(f"[SNOW] Work notes updated for incident {sys_id}")
+                    return True
+                else:
+                    print(f"[SNOW] Failed to update work notes for {sys_id}: {resp.status_code} {resp.text}")
+                    return False
+        except Exception as e:
+            print(f"[SNOW] Error updating work notes for {sys_id}: {e}")
+            return False
+
     def assign_incident_in_snow(self, incident_sys_id: str, associate_sys_id: str, justification: str) -> bool:
         """
         Assigns an incident to an associate in ServiceNow and adds the AI's
