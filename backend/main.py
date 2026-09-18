@@ -47,7 +47,7 @@ async def startup_event():
     # the first HTTP request.
     # sync_associates_from_servicenow()
     # Start the periodic background fetch task
-    # asyncio.create_task(periodic_snow_pull())
+    asyncio.create_task(periodic_snow_pull())
 
 # Background task to periodically pull incidents (simulate ServiceNow webhook/polling)
 async def periodic_snow_pull():
@@ -57,10 +57,14 @@ async def periodic_snow_pull():
             new_incidents = servicenow_client.pull_new_incidents()
             if new_incidents:
                 print(f"Ingested {len(new_incidents)} new unassigned incident(s).")
+                for incident in new_incidents:
+                    background_assignment(incident.get("number"))
+            else:
+                print("No active inc found in SNOW")
         except Exception as e:
             print(f"Error in periodic ServiceNow sync: {e}")
         # Wait 60 seconds between sync checks
-        await asyncio.sleep(60)
+        await asyncio.sleep(30)
 
 # Pydantic Schemas
 class AssignRequest(BaseModel):
@@ -231,7 +235,7 @@ def background_assignment(inc_num:str):
     print(f"running in background for {inc_num}")
     try:
         res = assignment_engine.execute_assignment(inc_num)
-        print("response assignemnt agetn:",res)
+        # print("response assignemnt agent:",res)
 
         # If the assignment was successful and an associate was recommended,
         # push the assignment back to ServiceNow.
@@ -313,7 +317,7 @@ def push_incident(request: PushIncidentRequest,backgroud_task:BackgroundTasks):
         conn.close()
 
 
-@app.post("/api/incidents/assign")
+# @app.post("/api/incidents/assign")
 
 def assign_incidents(request: AssignRequest):
     results = []

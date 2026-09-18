@@ -170,6 +170,7 @@ class AssignmentEngine:
         conn = get_db_connection()
         cursor = conn.cursor()
         # 1. Fetch incident
+        print('STAGE 1: FETCHING INC DETAILS')
         cursor.execute("SELECT * FROM incidents WHERE number = ?", (incident_number,))
         inc_row = cursor.fetchone()
         
@@ -185,6 +186,7 @@ class AssignmentEngine:
         rejected_list = json.loads(incident["rejected_associates"] or "[]")
         
         # 2. Search RAG for similar resolved tickets
+        print('STAGE 2: SEARCHING FOR SIMILAR INC')
         traced_similar_inc = traceable(
             rag_engine.search_similar_incidents,
             name="search_similar_incidents",
@@ -197,6 +199,7 @@ class AssignmentEngine:
         )
         
         # 3. Find candidates on shift
+        print('STAGE 3: FINDING ON SHIFT ASSOCIATES')
         now = datetime.now()
         candidates, route_status = self.get_candidate_associates(now, rejected_list)
         if not candidates:
@@ -204,21 +207,27 @@ class AssignmentEngine:
             return {"status": "error", "message": "No candidates available for assignment."}
             
         # 4. Score candidates
+        print('STAGE 4: CALCULATING SCORE FOR EACH CANDIDATE')
         scored_candidates = self.calculate_heuristic_scores(incident, candidates, rag_matches)
         # 5. Build prompt for Ollama
+        print("STAGE 5: BUILDING PROMPT")
         prompt = self.build_ollama_prompt(incident, scored_candidates, rag_matches, route_status)
         # 6. Call Ollama
+        print('STAGE 6: CALLING LLM')
         recommendation = self.call_ollama_llm(prompt, scored_candidates[0]["name"])
         # 7. Update Database
+        print('STAGE 7: SNOW ASSIGNMENT')
         conf_score = recommendation["confidence_score"]
         rec_associate = recommendation["recommended_associate"]
         justification = recommendation["justification"]
         
         # If score is below 70%, flag for human review
         new_status = "Assigned"
+        print(f'conf_score:{conf_score} {type(conf_score)} threshold:{settings.CONFIDENCE_THRESHOLD}')
         if conf_score < settings.CONFIDENCE_THRESHOLD:
             new_status = "Flagged"
             servicenow_client.update_work_notes(incident["sys_id"],"ASSIGNMENT: Assign it to available engineer.")
+            return {"status": "Flagged"}
             
         # Save audit log
         cursor.execute("""
@@ -230,7 +239,7 @@ class AssignmentEngine:
             incident_number,
             rec_associate,
             conf_score,
-            justification,
+            "ASSIGNMENT:"+justification,
             json.dumps(scored_candidates),
             "Pending_Approval" if new_status == "Flagged" else "Approved",
             datetime.utcnow().isoformat()
@@ -306,13 +315,13 @@ CANDIDATES CURRENTLY ON SHIFT:
 DECISION RULES:
 1. Prioritize associates who resolved highly similar tickets in the past (RAG History).
 2. Balance workloads: avoid assigning to associates with high number of active tickets if someone else is available.
-3. Output a Confidence Score (0-100%). If the candidates are a poor match, or workload is high, reduce the score. If a candidate is a perfect match (L3, on shift, has resolved this exact issue in past, has low workload), confidence should be 85%+.
+3. Output a Confidence Score (0-100%). If the candidates are a poor match, or workload is high, reduce the score. If a candidate is a perfect match (L2, on shift, has resolved this exact issue in past, has low workload), confidence should be increase.
 
 RESPONSE FORMAT:
 You MUST respond with a single JSON object. Do not include markdown wraps (like ```json), headers, or explanations. Use this schema:
 {{
   "recommended_associate": "Full Name of Selected Associate",
-  "confidence_score": 85,
+  "confidence_score": "Integer - a Confidence Score range from 0 to 100",
   "justification": "Detailed explanation mentioning their shift availability, RAG history, and workload in bullet points"
 }}
 """

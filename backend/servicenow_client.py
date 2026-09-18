@@ -141,12 +141,110 @@ def _map_snow_category(category: str | None, subcategory: str | None = None) -> 
 
 
 class ServiceNowClient:
+    checked_inc=set()
+
     def __init__(self):
         self.url = settings.SERVICENOW_URL
         self.user = settings.SERVICENOW_USER
         self.pwd = settings.SERVICENOW_PASSWORD
         self.mock_mode = settings.is_servicenow_mocked
         self.inc_counter = 100234
+
+    def fetch_incidents_from_api_2(self) -> list:
+        """
+        Simulates call to real ServiceNow Table API:
+        GET /api/now/table/incident?sysparm_query=assignment_groupISEMPTY^active=true
+        """
+        try:
+            # Real API call
+            headers = {"Accept": "application/json"}
+            query_url = f"{self.url}/api/now/table/incident"
+            
+            last_2_min = datetime.now(timezone.utc) - timedelta(minutes=1)
+            two_mins_ago = last_2_min.strftime("%Y-%m-%d %H:%M:%S")
+            group_name = "HIP Global"
+
+            params = {
+                "sysparm_limit": 20,
+                "sysparm_query": f"assignment_group.name={group_name}^sys_updated_on>={two_mins_ago}^active=true",
+                "sysparm_display_value": "true",
+            }
+            
+            with httpx.Client(auth=(self.user, self.pwd), headers=headers, timeout=10.0) as client:
+                resp = client.get(query_url, params=params)
+                # print("RESPONSE JSON:\n",resp)
+                if resp.status_code == 200:
+                    results = resp.json().get("result", [])
+                    # print("GET SNOW INCIDENT CALL:\n",json.dumps(results,indent=4))
+
+                    # Map ServiceNow API output fields to our local schema format.
+                    # The DB now stores the full SNOW payload, so the mapper
+                    # must emit every column (typed + reference JSON + raw).
+                    # Helpers from backend.snow_refs handle the {link,value}
+                    # reference-object form so we accept both display_value
+                    # and raw shapes transparently.
+                    mapped = []
+                    for item in results:
+                        if item.get("number") in servicenow_client.checked_inc:
+                            print(f"We have already check {item.get("number")}. Hence ignored...")
+                            continue
+                        mapped.append({
+                            # Original slim fields (preserved for engine + UI)
+                            "number":            item.get("number"),
+                            "short_description": item.get("short_description"),
+                            "description":       item.get("description"),
+                            # Map SNOW free-text category → our domain names
+                            "category":          _map_snow_category(
+                                                        item.get("category"),
+                                                        item.get("subcategory"),
+                                                    ),
+                            "priority":          item.get("priority") or "3",
+                            "urgency":           item.get("urgency")  or "3",
+                            "created_at":        item.get("sys_created_on"),
+                            "state":             item.get("state"),
+
+                            # Display strings for legacy compatibility
+                            # (assigned_to stays a plain name; *_ref gets
+                            # the full JSON for the new columns)
+                            "assigned_to":       display_value(item.get("assigned_to")),
+                            "assignment_group":  display_value(item.get("assignment_group")),
+
+                            # New typed SNOW fields
+                            "sys_id":            item.get("sys_id"),
+                            "sys_class_name":    item.get("sys_class_name") or "incident",
+                            "sys_mod_count":     int(item.get("sys_mod_count") or 0),
+                            "sys_updated_on":    item.get("sys_updated_on"),
+                            "sys_updated_by":    display_value(item.get("sys_updated_by")),
+                            "incident_state":    item.get("incident_state"),
+                            "impact":            item.get("impact"),
+                            "severity":          item.get("severity"),
+                            "subcategory":       item.get("subcategory"),
+                            "close_code":        item.get("close_code"),
+                            "close_notes":       item.get("close_notes"),
+                            "made_sla":          item.get("made_sla"),
+                            "hold_reason":       item.get("hold_reason"),
+                            "reassignment_count":int(item.get("reassignment_count") or 0),
+                            "reopen_count":      int(item.get("reopen_count") or 0),
+                            "opened_at":         item.get("opened_at"),
+                            "resolved_at":       item.get("resolved_at"),
+                            "closed_at":         item.get("closed_at"),
+                            "sla_due":           item.get("sla_due"),
+                            "activity_due":      item.get("activity_due"),
+
+                            # Reference objects (JSON: {value, display_value, link})
+                            "opened_by_ref":        as_ref_json(item.get("opened_by")),
+                            "caller_id_ref":        as_ref_json(item.get("caller_id")),
+                            "assignment_group_ref": as_ref_json(item.get("assignment_group")),
+                            "assigned_to_ref":      as_ref_json(item.get("assigned_to")),
+
+                            # Frozen full copy of the original SNOW row
+                            "raw_payload":       json.dumps(item),
+                        })
+                    return mapped
+        except Exception as e:
+            print(f"Failed to fetch from real ServiceNow API: {e}")
+
+        return []
 
     def fetch_incidents_from_api(self) -> list:
         """
@@ -182,6 +280,10 @@ class ServiceNowClient:
                         # and raw shapes transparently.
                         mapped = []
                         for item in results:
+                            if item.get("number") in servicenow_client.checked_inc:
+                                print(f"We have already check {item.get("number")}. Hence ignored...")
+                                continue
+                            servicenow_client.checked_inc.add(item.get("number"))
                             mapped.append({
                                 # Original slim fields (preserved for engine + UI)
                                 "number":            item.get("number"),
@@ -443,13 +545,17 @@ class ServiceNowClient:
         never silently undo a human override.
         """
         new_tickets = []
-        if not self.mock_mode:
-            new_tickets = self.fetch_incidents_from_api()
+        new_tickets = self.fetch_incidents_from_api_2()
 
         # In mock mode, we simulate a single ticket 60% of the time on manual pull
-        if self.mock_mode or not new_tickets:
-            # Generate a new mock ticket
-            new_tickets = [self.simulate_single_incident()]
+        # if self.mock_mode or not new_tickets:
+        #     # Generate a new mock ticket
+        #     new_tickets = [self.simulate_single_incident()]
+        if len(new_tickets) == 0:
+            return []
+
+        # for testing only
+        # return new_tickets
 
         # Insert (or refresh) tickets in SQLite.
         # The full column list below MUST stay in sync with the CREATE TABLE
@@ -576,8 +682,12 @@ class ServiceNowClient:
 
             cursor.execute(insert_sql, row)
 
-            if is_new:
+            # if is_new:
+            #     added_tickets.append(ticket)
+            if ticket.get("number") not in servicenow_client.checked_inc:
                 added_tickets.append(ticket)
+
+            servicenow_client.checked_inc.add(ticket.get("number"))
 
         conn.commit()
         conn.close()
