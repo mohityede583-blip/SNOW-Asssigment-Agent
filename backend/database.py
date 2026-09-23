@@ -385,7 +385,7 @@ def get_seed_resolved_incidents() -> list:
     return [
             {
                 "number": "INC0012948",
-                "resolved_by": "Melinda Carleton",
+                "resolved_by": "Naomi Greenly",
                 "short_description": "Critical BusinessWorks JVM Heap Exhaustion and Engine Stoppage During Peak XML Payload Processing",
                 "resolution": "Restarted the BW engine instance and increased JVM max heap allocation (-Xmx) from 2GB to 4GB in TRA config. Verified stable processing via monitoring tools."
             },

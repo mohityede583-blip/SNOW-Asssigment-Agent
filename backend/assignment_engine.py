@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import traceable
@@ -12,9 +12,8 @@ from backend.servicenow_client import servicenow_client
 
 class AssignmentEngine:
     # Points awarded per listed skill that appears in the incident text.
-    # Tunable. At 10 points per match, an associate with 3 matching skills
-    # gets +30 points — comparable to the L3-vs-Priority-2 bonus (35 pts).
-    SKILL_MATCH_BONUS = 10.0
+    # Tunable. High weightage to prioritize specialized skills.
+    SKILL_MATCH_BONUS = 30.0
 
     def __init__(self):
         self.roster_mgr = RosterManager()
@@ -82,89 +81,35 @@ class AssignmentEngine:
 
         conn.close()
         return available, route_status
-    @traceable(name="calculate_score",run_type="tool")
-    def calculate_heuristic_scores(self, incident: dict, candidates: list, rag_matches: list) -> list:
+
+    @traceable(name="get_candidate_details",run_type="tool")
+    def calculate_heuristic_scores(self, candidates: list, rag_matches: list) -> list:
         """
-        Calculates a compatibility score for each candidate associate.
+        Retrieves essential details for each candidate to be used by the LLM for decision making.
+        Returns a list of candidates with their profile and RAG match count.
         """
-        scored_candidates = []
-        prio = str(incident["priority"])
-        
+        candidate_details = []
+
         for cand in candidates:
-            # Start with base score of 50
-            score = 50.0
-            reasons = []
-            
-            # 1. Workload balancing (Penalize queue size: -15 points per active ticket)
-            active_tkts = cand["active_tickets"]
-            workload_penalty = active_tkts * 15
-            score -= workload_penalty
-            reasons.append(f"Workload: {active_tkts} active tickets (-{workload_penalty} pts)")
-            
-            # 2. Skill Proficiency vs Incident Priority
-            # Priority 1 (Critical) & 2 (High) are senior tickets
-            skill = cand["skill_level"]
-            if prio in ["1", "2"]:
-                if skill == "L3":
-                    score += 35
-                    reasons.append("SLA Urgency: Senior associate L3 matched to high priority (+35 pts)")
-                elif skill == "L2":
-                    score += 15
-                    reasons.append("SLA Urgency: Mid-level associate L2 matched to high priority (+15 pts)")
-                elif skill == "L1":
-                    score -= 20
-                    reasons.append("SLA Urgency: L1 junior associate penalized for high priority (-20 pts)")
-            else:
-                # Priority 3 (Moderate) & 4 (Low) are standard tickets
-                if skill == "L1":
-                    score += 25
-                    reasons.append("Workload/SLA: L1 junior associate matched to standard priority (+25 pts)")
-                elif skill in ["L2", "L3"]:
-                    score += 10
-                    reasons.append(f"Workload/SLA: Senior associate {skill} matched to standard ticket (+10 pts)")
-                    
-            # 3. Domain Experience (RAG lookup matches)
-            rag_bonus = 0.0
-            rag_count = 0
-            for match in rag_matches:
-                if match["resolved_by"] == cand["name"]:
-                    # Add points based on similarity of their past resolution
-                    bonus = match["similarity_score"] * 0.4
-                    rag_bonus += bonus
-                    rag_count += 1
-                    
-            if rag_count > 0:
-                score += rag_bonus
-                reasons.append(f"RAG History: Solved {rag_count} similar incident(s) in past (+{round(rag_bonus, 1)} pts)")
+            # Count RAG matches for this candidate
+            rag_count = sum(1 for match in rag_matches if match["resolved_by"] == cand["name"])
 
-            # 4. Skill match — count how many of the candidate's listed skills
-            # appear in the incident's short_description + description.
-            # Each match is worth SKILL_MATCH_BONUS points. SNOW-synced rows
-            # have skills=NULL so this step is a no-op for them.
-            skill_hits = self._count_skill_matches(
-                cand.get("skills"),
-                f"{incident.get('short_description', '')} {incident.get('description', '') or ''}",
-            )
-            if skill_hits > 0:
-                skill_bonus = skill_hits * self.SKILL_MATCH_BONUS
-                score += skill_bonus
-                reasons.append(
-                    f"Skill match: {skill_hits} listed skill(s) appear in incident (+{round(skill_bonus, 1)} pts)"
-                )
+            candidate_details.append({
+                "name": cand["name"],
+                "domain": cand["domain"],
+                "skills": cand.get("skills") or "No specific skills listed",
+                "active_tickets": cand["active_tickets"],
+                "rag_count": rag_count
+            })
 
-            cand_scored = cand.copy()
-            cand_scored["heuristic_score"] = round(score, 1)
-            cand_scored["score_breakdown"] = reasons
-            scored_candidates.append(cand_scored)
-            
-        # Sort candidates by heuristic score descending
-        scored_candidates.sort(key=lambda x: x["heuristic_score"], reverse=True)
-        return scored_candidates
+        # Sort by RAG count (desc) then active tickets (asc) to provide a sensible default order
+        candidate_details.sort(key=lambda x: (-x["rag_count"], x["active_tickets"]))
+        return candidate_details
 
     @traceable(name="execute_assignment", run_type="chain")
     def execute_assignment(self, incident_number: str) -> dict:
         """
-        Retrieves incident details, runs the scoring heuristic, invokes the Ollama LLM
+        Retrieves incident details, gathers candidate profiles, invokes the Ollama LLM
         for reasoning, and records the audit log in SQLite.
         """
         conn = get_db_connection()
@@ -173,18 +118,16 @@ class AssignmentEngine:
         print('STAGE 1: FETCHING INC DETAILS')
         cursor.execute("SELECT * FROM incidents WHERE number = ?", (incident_number,))
         inc_row = cursor.fetchone()
-        
+
         if not inc_row:
             conn.close()
             return {"status": "error", "message": "Incident not found"}
-            
+
         incident = dict(inc_row)
 
-        # print("incident:",json.dumps(incident))
-        
         # Parse rejected list
         rejected_list = json.loads(incident["rejected_associates"] or "[]")
-        
+
         # 2. Search RAG for similar resolved tickets
         print('STAGE 2: SEARCHING FOR SIMILAR INC')
         traced_similar_inc = traceable(
@@ -192,12 +135,12 @@ class AssignmentEngine:
             name="search_similar_incidents",
             run_type='retriever'
         )
-        
+
         rag_matches = traced_similar_inc(
-            f"{incident['short_description']} {incident['description']}", 
-            top_k=2
+            f"{incident['short_description']} {incident['description']}",
+            top_k=3
         )
-        
+
         # 3. Find candidates on shift
         print('STAGE 3: FINDING ON SHIFT ASSOCIATES')
         now = datetime.now()
@@ -205,10 +148,10 @@ class AssignmentEngine:
         if not candidates:
             conn.close()
             return {"status": "error", "message": "No candidates available for assignment."}
-            
-        # 4. Score candidates
-        print('STAGE 4: CALCULATING SCORE FOR EACH CANDIDATE')
-        scored_candidates = self.calculate_heuristic_scores(incident, candidates, rag_matches)
+
+        # 4. Gather candidate details
+        print('STAGE 4: GATHERING CANDIDATE PROFILES')
+        scored_candidates = self.calculate_heuristic_scores(candidates, rag_matches)
         # 5. Build prompt for Ollama
         print("STAGE 5: BUILDING PROMPT")
         prompt = self.build_ollama_prompt(incident, scored_candidates, rag_matches, route_status)
@@ -220,7 +163,7 @@ class AssignmentEngine:
         conf_score = recommendation["confidence_score"]
         rec_associate = recommendation["recommended_associate"]
         justification = recommendation["justification"]
-        
+
         # If score is below 70%, flag for human review
         new_status = "Assigned"
         print(f'conf_score:{conf_score} {type(conf_score)} threshold:{settings.CONFIDENCE_THRESHOLD}')
@@ -228,11 +171,11 @@ class AssignmentEngine:
             new_status = "Flagged"
             servicenow_client.update_work_notes(incident["sys_id"],"ASSIGNMENT: Assign it to available engineer.")
             return {"status": "Flagged"}
-            
+
         # Save audit log
         cursor.execute("""
         INSERT INTO assignment_logs (
-            incident_number, recommended_associate, confidence_score, 
+            incident_number, recommended_associate, confidence_score,
             justification, evaluated_associates, decision_status, assigned_by, timestamp
         ) VALUES (?, ?, ?, ?, ?, ?, 'AI', ?)
         """, (
@@ -242,32 +185,32 @@ class AssignmentEngine:
             "ASSIGNMENT:"+justification,
             json.dumps(scored_candidates),
             "Pending_Approval" if new_status == "Flagged" else "Approved",
-            datetime.utcnow().isoformat()
+            datetime.now(timezone.utc).isoformat()
         ))
-        
+
         # Update incident record
         # If approved automatically, set assigned_to. Else keep empty for human review.
         assigned_to = rec_associate if new_status == "Assigned" else None
-        assigned_at = datetime.utcnow().isoformat() if new_status == "Assigned" else None
+        assigned_at = datetime.now(timezone.utc).isoformat() if new_status == "Assigned" else None
 
-        
+
         cursor.execute("""
-        UPDATE incidents 
+        UPDATE incidents
         SET status = ?, assigned_to = ?, assigned_at = ?
         WHERE number = ?
         """, (new_status, assigned_to, assigned_at, incident_number))
-        
+
         # Increment active tickets for the associate if auto-assigned
         if new_status == "Assigned":
             cursor.execute("""
-            UPDATE associates 
-            SET active_tickets = active_tickets + 1 
+            UPDATE associates
+            SET active_tickets = active_tickets + 1
             WHERE name = ?
             """, (rec_associate,))
-            
+
         conn.commit()
         conn.close()
-        
+
         return {
             "status": "success",
             "incident_number": incident_number,
@@ -283,24 +226,22 @@ class AssignmentEngine:
     def build_ollama_prompt(self, incident: dict, candidates: list, rag_matches: list, route_status: str) -> str:
         candidates_str = ""
         for c in candidates:
-            candidates_str += f"- Name: {c['name']}, Domain: {c['domain']}, Skill Level: {c['skill_level']}, Active Tickets: {c['active_tickets']}, Heuristic Score: {c['heuristic_score']}\n"
-            candidates_str += f"  Factors: {', '.join(c['score_breakdown'])}\n"
+            candidates_str += f"- Name: {c['name']}, Domain: {c['domain']}, Skills: {c['skills']}, Active Tickets: {c['active_tickets']}, RAG History: Solved {c['rag_count']} similar incident(s)\n"
         rag_str = ""
         if rag_matches:
             for i, m in enumerate(rag_matches):
-                rag_str += f"Match {i+1} (Similarity {m['similarity_score']}%):\n"
+                rag_str += f"\nMatch {i+1} (Similarity {m['similarity_score']}%):\n"
                 rag_str += f"  - Short Description: {m['short_description']}\n"
                 rag_str += f"  - Resolution: {m['resolution']}\n"
                 rag_str += f"  - Resolved By: {m['resolved_by']}\n"
         else:
             rag_str = "No historical matching incidents found.\n"
-            
+
         prompt = f"""[System Instruction]
 You are an AI Dispatcher for ServiceNow incidents. Analyze the incident details, historical solutions, and candidate associates, and choose the single best associate to handle this incident.
 
 INCIDENT TO ASSIGN:
 - Ticket: {incident['number']}
-- Category: {incident['category']}
 - Short Description: {incident['short_description']}
 - Description: {incident['description']}
 - Priority: {incident['priority']} (1=Critical, 2=High, 3=Moderate, 4=Low)
@@ -315,14 +256,15 @@ CANDIDATES CURRENTLY ON SHIFT:
 DECISION RULES:
 1. Prioritize associates who resolved highly similar tickets in the past (RAG History).
 2. Balance workloads: avoid assigning to associates with high number of active tickets if someone else is available.
-3. Output a Confidence Score (0-100%). If the candidates are a poor match, or workload is high, reduce the score. If a candidate is a perfect match (L2, on shift, has resolved this exact issue in past, has low workload), confidence should be increase.
+3. Skills Matching: make sure associate should have skillset which needs to resolve given incident.
+4. Output a Confidence Score (0-100%). If the candidates are a poor match, or workload is high, reduce the score. If a candidate is a perfect match (on shift and has resolved this exact issue in past), confidence should be increase.
 
 RESPONSE FORMAT:
 You MUST respond with a single JSON object. Do not include markdown wraps (like ```json), headers, or explanations. Use this schema:
 {{
   "recommended_associate": "Full Name of Selected Associate",
-  "confidence_score": "Integer - a Confidence Score range from 0 to 100",
-  "justification": "Detailed explanation mentioning their shift availability, RAG history, and workload in bullet points"
+  "confidence_score": "A dynamic Confidence Score range from 0 to 100 based on how much you sure about recommended associate capability to resolve given incident",
+  "justification": "Detailed explanation why should we assign incident to recommended associate mentioning their shift availability, RAG history, and matching skillsets in bullet points"
 }}
 """
         return prompt
@@ -331,8 +273,8 @@ You MUST respond with a single JSON object. Do not include markdown wraps (like 
     def call_ollama_llm(self, prompt: str, default_candidate: str) -> dict:
         """
         Calls Ollama through ChatOllama so the request/response is captured
-        as a single LLM run in LangSmith. Falls back to the top heuristic
-        candidate if Ollama is unreachable or returns unparseable JSON.
+        as a single LLM run in LangSmith. Falls back to the top candidate
+        if Ollama is unreachable or returns unparseable JSON.
         """
         try:
             response = self.llm.invoke(
@@ -371,11 +313,11 @@ You MUST respond with a single JSON object. Do not include markdown wraps (like 
         except Exception as e:
             print(f"Error calling Ollama LLM or parsing response: {e}")
 
-        # Fallback to the top candidate from heuristic scoring if LLM fails
+        # Fallback to the top candidate from the provided list if LLM fails
         return {
             "recommended_associate": default_candidate,
             "confidence_score": 65.0,  # Below 70% threshold so it goes to human review
-            "justification": f"Fallback: Ollama generation failed. Selected highest ranking heuristic candidate {default_candidate}. Requires manual auditing.",
+            "justification": f"Fallback: Ollama generation failed. Selected top candidate based on RAG and workload: {default_candidate}. Requires manual auditing.",
         }
 
 assignment_engine = AssignmentEngine()

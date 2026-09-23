@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     )
 
     # Confidence Score Threshold (Below this will require Human Review)
-    CONFIDENCE_THRESHOLD: float = 80.0
+    CONFIDENCE_THRESHOLD: float = 90.0
 
     # Use pydantic-settings v2 config: load .env from the same directory as this file.
     # Pydantic-settings automatically reads from BOTH the .env file and the process
